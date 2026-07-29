@@ -15,7 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from './auth/auth-context';
 import Players from './components/players';
-import { insertPlayer } from './service/playerService';
+import { insertPlayersBulk } from './service/playerService';
 import { assignPlayersToTeam } from './service/teamPlayerService';
 import { createTeam } from './service/teamsService';
 
@@ -79,8 +79,10 @@ export default function CreateTeamScreen() {
   };
 
   const stripCountryCode = (number: string, code = "91"): string => {
-    const normalized = number.replace("+", "");
-    return normalized.startsWith(code) ? normalized.slice(code.length) : normalized;
+    const digitsOnly = String(number || '').replace(/\D/g, '');
+    return digitsOnly.startsWith(code) && digitsOnly.length > 10
+      ? digitsOnly.slice(code.length)
+      : digitsOnly;
   };
   
 
@@ -121,27 +123,64 @@ export default function CreateTeamScreen() {
         }
       }
 
-      // Insert new players and get their IDs
-      const insertedPlayers: Player[] = [];
-      for (const player of newPlayers) {
-        try {
-          const { id, name, mobile, role } = player;
-          const newPlayerResponse = await insertPlayer({ id, name, mobile, role });
-          insertedPlayers.push((newPlayerResponse as { player: Player }).player); 
-        } catch (playerError) {
-          if ((playerError as any).response?.status === 409) {
-            Alert.alert('Error', `Player with mobile ${player.mobile} already exists.`);
-            return false;
-          }
-          Alert.alert('Error', `Failed to add player ${player.name}. Please try again.`);
+      let createdPlayersByMobile = new Map<string, any>();
+      let existingPlayersByMobile = new Map<string, any>();
+
+      if (newPlayers.length > 0) {
+        const bulkResponse = await insertPlayersBulk(
+          newPlayers.map((player) => ({
+            id: player.id,
+            name: player.name,
+            mobile: player.mobile,
+            role: player.role,
+          })),
+        );
+
+        const invalidPlayers = Array.isArray((bulkResponse as any)?.invalidPlayers)
+          ? (bulkResponse as any).invalidPlayers
+          : [];
+
+        if (invalidPlayers.length > 0) {
+          const errorPreview = invalidPlayers
+            .slice(0, 3)
+            .map((item: any) => `${item.mobile || 'unknown'} (${item.reason || 'invalid'})`)
+            .join(', ');
+          Alert.alert('Player Validation Error', `Please fix invalid players: ${errorPreview}`);
+          return;
         }
+
+        const createdPlayers = Array.isArray((bulkResponse as any)?.createdPlayers)
+          ? (bulkResponse as any).createdPlayers
+          : [];
+        const existingPlayersFromBulk = Array.isArray((bulkResponse as any)?.existingPlayers)
+          ? (bulkResponse as any).existingPlayers
+          : [];
+
+        createdPlayersByMobile = new Map(
+          createdPlayers.map((player: any) => [String(player.mobile || ''), player]),
+        );
+        existingPlayersByMobile = new Map(
+          existingPlayersFromBulk.map((player: any) => [String(player.mobile || ''), player]),
+        );
       }
 
-      // Combine IDs of existing and newly inserted players
-      const allPlayers = [
-        ...existingPlayers,
-        ...insertedPlayers
-      ];
+      const mergedNewPlayers = newPlayers.map((player) => {
+        const mobileKey = String(player.mobile || '');
+        const matched = createdPlayersByMobile.get(mobileKey) || existingPlayersByMobile.get(mobileKey);
+
+        if (!matched) {
+          throw new Error(`Unable to process player ${player.name} (${player.mobile}). Please try again.`);
+        }
+
+        return {
+          ...matched,
+          isCaptain: !!player.isCaptain,
+          isViceCaptain: !!player.isViceCaptain,
+        };
+      });
+
+      // Combine IDs of existing and processed new players
+      const allPlayers = [...existingPlayers, ...mergedNewPlayers];
 
       const playerAssignments = allPlayers.map(p => ({
         playerId: p.id,
@@ -149,20 +188,12 @@ export default function CreateTeamScreen() {
         is_vicecaptain: p.isViceCaptain,
       }));
 
-      // Assign all players to the team
-      try {
-        await assignPlayersToTeam(teamId, playerAssignments);
-        Alert.alert('Success', 'Players assigned to team successfully');
-        router.replace(`/teams`);
-      } catch (assignError) {
-        console.error('Failed to assign players to team:', assignError);
-        throw new Error('Player assignment to team failed.');
-      }
+      await assignPlayersToTeam(String(teamId), playerAssignments);
 
       Alert.alert(
         'Team Created!',
-        `${teamName} has been created successfully with ${players.length} players. Invitations will be sent to all players.`,
-        [{ text: 'OK', onPress: () => router.back() }]
+        `${teamName} has been created successfully with ${players.length} players.`,
+        [{ text: 'OK', onPress: () => router.replace('/teams') }],
       );
     } catch (error) {
       let errorMessage = 'Failed to create team. Please try again.';
@@ -297,7 +328,9 @@ export default function CreateTeamScreen() {
             <ArrowLeft size={24} color="#111827" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Create Team</Text>
-          <View style={styles.placeholder} />
+          <TouchableOpacity style={styles.homeButton} onPress={() => router.replace('/(tabs)')}>
+            <Text style={styles.homeButtonText}>Home</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.stepIndicator}>
@@ -400,6 +433,20 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     width: 40,
+  },
+  homeButton: {
+    minWidth: 48,
+    height: 32,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#ECFDF5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  homeButtonText: {
+    fontSize: 12,
+    fontFamily: 'Inter-SemiBold',
+    color: '#166534',
   },
   stepIndicator: {
     flexDirection: 'row',

@@ -1,16 +1,16 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
-import { Calendar, IndianRupee, MapPin, Search, Trophy, Users } from 'lucide-react-native';
+import { Calendar, IndianRupee, MapPin, Search, SlidersHorizontal, Trophy, Users, X } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Platform, RefreshControl, ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Platform, RefreshControl, ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/auth-context';
@@ -372,19 +372,23 @@ export default function HomeScreen() {
         {/* Redesigned Search & Filter */}
         <View style={styles.advancedSearchContainer}>
           <View style={styles.searchBarRow}>
-            <Search size={20} color="#9CA3AF" style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search tournaments..."
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholderTextColor="#9CA3AF"
-            />
+            <View style={styles.searchInputShell}>
+              <Search size={18} color="#7C8EA6" style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search tournaments or city"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholderTextColor="#94A3B8"
+              />
+            </View>
             <TouchableOpacity
-              style={styles.filterToggleButton}
+              style={[styles.filterToggleButton, showFilters && styles.filterToggleButtonActive]}
               onPress={() => setShowFilters(prev => !prev)}
+              accessibilityRole="button"
+              accessibilityLabel={showFilters ? 'Close filters' : 'Open filters'}
             >
-              <Text style={styles.filterToggleText}>Filter</Text>
+              {showFilters ? <X size={18} color="#FFFFFF" /> : <SlidersHorizontal size={18} color="#166534" />}
             </TouchableOpacity>
           </View>
           {showFilters && (
@@ -393,22 +397,28 @@ export default function HomeScreen() {
                 style={styles.filterButton}
                 onPress={() => setShowDatePicker(true)}
               >
-                <Calendar size={18} color="#2563EB" />
+                    <Calendar size={18} color="#16A34A" />
                 <Text style={styles.filterText}>
                   {filterDate ? formatDate(filterDate.toISOString()) : 'Date'}
                 </Text>
               </TouchableOpacity>
-              <View style={styles.filterButton}>
-                <MapPin size={18} color="#2563EB" />
+
+              <View style={styles.filterInputWrap}>
+                <MapPin size={18} color="#16A34A" />
                 <TextInput
                   style={styles.filterInput}
-                  placeholder="Location"
+                  placeholder="Filter by city"
                   value={filterLocation}
                   onChangeText={setFilterLocation}
                   onBlur={applyCityFilter}
                   placeholderTextColor="#9CA3AF"
                 />
               </View>
+
+              <TouchableOpacity style={styles.applyFilterButton} onPress={applyCityFilter}>
+                <Text style={styles.applyFilterText}>Apply Location</Text>
+              </TouchableOpacity>
+
               {showDatePicker && (
                 <DateTimePicker
                   value={filterDate || new Date()}
@@ -637,7 +647,7 @@ export default function HomeScreen() {
                         </View>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[styles.quickActionCard, styles.quickActionSecondary]}
+                        style={[styles.quickActionCard, styles.quickActionCardSecondary]}
                         onPress={() => router.push('/create-tournament')}
                       >
                         <View style={[styles.quickActionIcon, styles.quickActionIconSecondary]}>
@@ -674,48 +684,101 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   advancedSearchContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 18,
     marginHorizontal: 16,
     marginTop: 8,
     marginBottom: 16,
-    padding: 16,
-    boxShadow: '0px 4px 16px rgba(0, 0, 0, 0.15)',
-    elevation: 8,                          // increased elevation for Android
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    boxShadow: '0px 8px 18px rgba(15, 23, 42, 0.08)',
+    elevation: 4,
   },
-  searchBarRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  searchIcon: { marginRight: 10 },
-  searchInput: { flex: 1, fontSize: 16, color: '#111827' },
+  searchBarRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  searchInputShell: {
+    flex: 1,
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D8E2EE',
+    paddingHorizontal: 12,
+  },
+  searchIcon: { marginRight: 8 },
+  searchInput: { flex: 1, fontSize: 15, color: '#0F172A' },
   filterToggleButton: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginLeft: 8,
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  filterToggleText: { color: '#22C55E', fontWeight: '600', fontSize: 15 },
+  filterToggleButtonActive: {
+    backgroundColor: '#22C55E',
+    borderColor: '#16A34A',
+  },
   filtersModal: {
-    marginTop: 10,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
+    marginTop: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#DBE7F5',
     padding: 12,
-    boxShadow: '0px 1px 4px rgba(0, 0, 0, 0.07)',
+    boxShadow: '0px 6px 14px rgba(37, 99, 235, 0.08)',
     elevation: 2,
   },
   filterButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginRight: 8,
-    marginBottom: 8,
+    backgroundColor: '#ECFDF5',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+    alignSelf: 'flex-start',
   },
-  filterText: { marginLeft: 6, color: '#2563EB', fontWeight: '500' },
-  filterInput: { marginLeft: 6, minWidth: 80, color: '#2563EB', fontWeight: '500' },
+  filterText: { marginLeft: 8, color: '#166534', fontWeight: '600', fontSize: 13 },
+  filterInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    minHeight: 44,
+  },
+  filterInput: {
+    marginLeft: 8,
+    flex: 1,
+    color: '#0F172A',
+    fontWeight: '500',
+    fontSize: 14,
+  },
+  applyFilterButton: {
+    marginTop: 10,
+    alignSelf: 'flex-end',
+    borderRadius: 10,
+    backgroundColor: '#22C55E',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#16A34A',
+  },
+  applyFilterText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
   statusChipsRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 },
   statusChip: {
     backgroundColor: '#E5E7EB',
@@ -725,7 +788,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
     marginBottom: 8,
   },
-  statusChipActive: { backgroundColor: '#2563EB' },
+  statusChipActive: { backgroundColor: '#22C55E' },
   statusChipText: { color: '#374151', fontWeight: '500', fontSize: 13 },
   statusChipTextActive: { color: '#fff', fontWeight: '700' },
 
@@ -1123,7 +1186,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  quickActionSecondary: { backgroundColor: '#93C5FD', borderColor: '#3B82F6' },
+  quickActionCardSecondary: {
+    backgroundColor: '#BFDBFE',
+    borderColor: '#3B82F6',
+  },
   quickActionIcon: {
     width: 30,
     height: 30,
@@ -1133,7 +1199,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 8,
   },
-  quickActionIconSecondary: { backgroundColor: '#EFF6FF' },
+  quickActionIconSecondary: {
+    backgroundColor: '#DBEAFE',
+  },
   quickActionTextGroup: {
     flex: 1,
   },

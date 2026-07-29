@@ -2,20 +2,20 @@ import { router } from 'expo-router';
 import { Calendar, Trash2, UserPlus, Users } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import {
-    Alert,
-    FlatList,
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  FlatList,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/auth-context';
 import { Header } from '../components/AppHeader';
 import Players from '../components/players';
-import { insertPlayer } from '../service/playerService';
+import { insertPlayersBulk } from '../service/playerService';
 import { assignPlayersToTeam, getPlayersForTeams, getTeamsForPlayer, leaveTeam, removePlayerFromTeam } from '../service/teamPlayerService';
 import { deleteTeam, fetchTeams, fetchTeamsByMobile } from '../service/teamsService';
 import { fetchTournaments, fetchTournamentsByContact } from '../service/tournamentService';
@@ -247,23 +247,64 @@ export default function TeamsScreen() {
         }
       }
 
-      // Insert new players and get their IDs
-      const insertedPlayers = [];
-      for (const player of newPlayers) {
-        try {
-          const { id, name, mobile, role } = player;
-          const newPlayerResponse = await insertPlayer({ id, name, mobile, role });
-          const typedResponse = newPlayerResponse as { player: any };
-          insertedPlayers.push(typedResponse.player);
-        } catch (playerError) {
-          Alert.alert('Error', `Failed to add player ${player.name}. Please try again.`);
-          setAddingPlayers(false);
+      let createdPlayersByMobile = new Map<string, any>();
+      let existingPlayersByMobile = new Map<string, any>();
+
+      if (newPlayers.length > 0) {
+        const bulkResponse = await insertPlayersBulk(
+          newPlayers.map((player) => ({
+            id: player.id,
+            name: player.name,
+            mobile: player.mobile,
+            role: player.role,
+          })),
+        );
+
+        const invalidPlayers = Array.isArray((bulkResponse as any)?.invalidPlayers)
+          ? (bulkResponse as any).invalidPlayers
+          : [];
+
+        if (invalidPlayers.length > 0) {
+          const errorPreview = invalidPlayers
+            .slice(0, 3)
+            .map((item: any) => `${item.mobile || 'unknown'} (${item.reason || 'invalid'})`)
+            .join(', ');
+          Alert.alert('Player Validation Error', `Please fix invalid players: ${errorPreview}`);
           return;
         }
+
+        const createdPlayers = Array.isArray((bulkResponse as any)?.createdPlayers)
+          ? (bulkResponse as any).createdPlayers
+          : [];
+        const existingPlayersFromBulk = Array.isArray((bulkResponse as any)?.existingPlayers)
+          ? (bulkResponse as any).existingPlayers
+          : [];
+
+        createdPlayersByMobile = new Map(
+          createdPlayers.map((player: any) => [String(player.mobile || ''), player]),
+        );
+        existingPlayersByMobile = new Map(
+          existingPlayersFromBulk.map((player: any) => [String(player.mobile || ''), player]),
+        );
       }
 
+      const processedNewPlayers = newPlayers.map((player) => {
+        const mobileKey = String(player.mobile || '');
+        const matched = createdPlayersByMobile.get(mobileKey) || existingPlayersByMobile.get(mobileKey);
+
+        if (!matched) {
+          throw new Error(`Unable to process player ${player.name} (${player.mobile}). Please try again.`);
+        }
+
+        return {
+          ...matched,
+          isCaptain: !!player.isCaptain,
+          isViceCaptain: !!player.isViceCaptain,
+        };
+      });
+
       // Combine all players
-      const allPlayers = [...existingPlayers, ...insertedPlayers];
+      const allPlayers = [...existingPlayers, ...processedNewPlayers];
 
       await assignPlayersToTeam(
         playerScreenTeam.id.toString(),

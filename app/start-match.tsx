@@ -1,16 +1,16 @@
+import { router } from 'expo-router';
+import { ArrowLeft, Clock, Trophy, Users } from 'lucide-react-native';
+import { useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  Image,
+    Alert,
+    Image,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState } from 'react';
-import { router } from 'expo-router';
-import { ArrowLeft, Calendar, MapPin, Clock, Trophy, Users, Target } from 'lucide-react-native';
 
 const MY_TEAMS = [
   {
@@ -268,7 +268,9 @@ export default function StartMatchScreen() {
           <ArrowLeft size={24} color="#111827" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Start Match</Text>
-        <View style={styles.placeholder} />
+        <TouchableOpacity style={styles.homeButton} onPress={() => router.replace('/(tabs)')}>
+          <Text style={styles.homeButtonText}>Home</Text>
+        </TouchableOpacity>
       </View>
 
       {renderStepIndicator()}
@@ -348,6 +350,20 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     width: 40,
+  },
+  homeButton: {
+    minWidth: 48,
+    height: 32,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#ECFDF5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  homeButtonText: {
+    fontSize: 12,
+    fontFamily: 'Inter-SemiBold',
+    color: '#166534',
   },
   stepIndicator: {
     flexDirection: 'row',

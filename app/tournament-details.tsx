@@ -1,35 +1,35 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Linking from 'expo-linking';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import {
-    ArrowLeft,
-    Calendar,
-    CheckCircle2,
-    MapPinned,
-    MessageCircle,
-    Phone,
-    Trash2,
-    Trophy,
-    XCircle
+  ArrowLeft,
+  Calendar,
+  CheckCircle2,
+  MapPinned,
+  MessageCircle,
+  Phone,
+  Trash2,
+  Trophy,
+  XCircle
 } from 'lucide-react-native';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Animated,
-    Easing,
-    FlatList,
-    Image,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    Share,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Easing,
+  FlatList,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import DropDownPicker from 'react-native-dropdown-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -39,15 +39,15 @@ import { fetchSportById } from './service/sportsService';
 import { getPlayersForTeams } from './service/teamPlayerService';
 import { fetchTeamsByIds, fetchTeamsByMobile } from './service/teamsService';
 import {
-    completeTournamentMatch,
-    deleteTournamentById,
-    fetchTournamentMatches,
-    fetchTournamentsById,
-    resetTournamentMatches,
-    scheduleTournamentMatches,
-    setTournamentMatchToss,
-    startTournamentMatch,
-    updateTournament
+  completeTournamentMatch,
+  deleteTournamentById,
+  fetchTournamentMatches,
+  fetchTournamentsById,
+  resetTournamentMatches,
+  scheduleTournamentMatches,
+  setTournamentMatchToss,
+  startTournamentMatch,
+  updateTournament
 } from './service/tournamentService';
 import { addTeamToTournament, approveTeamInTournament, getTeamsByTournament, rejectTeamInTournament } from './service/tournamentTeamsService';
 
@@ -165,6 +165,7 @@ export default function TournamentDetailsScreen() {
   const [tossSubmitting, setTossSubmitting] = useState(false);
   const detailsScrollRef = useRef<ScrollView>(null);
   const scrollOffsetRef = useRef(0);
+  const matchesLoadInFlightRef = useRef<number | null>(null);
   const tossSpinValue = useRef(new Animated.Value(0)).current;
   const tossSpinAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
   const tossFaceSwapRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -201,6 +202,10 @@ export default function TournamentDetailsScreen() {
   const tournamentStartDate = tournament?.start_date ? new Date(tournament.start_date) : null;
   const tournamentEndDate = tournament?.end_date ? new Date(tournament.end_date) : null;
   const today = new Date();
+  const scheduleReleaseDate = tournamentStartDate ? new Date(tournamentStartDate) : null;
+  if (scheduleReleaseDate) {
+    scheduleReleaseDate.setDate(scheduleReleaseDate.getDate() - 2);
+  }
   const isDateActive =
     !!tournamentStartDate &&
     !!tournamentEndDate &&
@@ -212,6 +217,18 @@ export default function TournamentDetailsScreen() {
   const isStatusCompleted = (tournament?.status || '').toLowerCase() === 'completed';
   const isTournamentActive = isDateActive || isStatusActive;
   const isTournamentCompleted = isDateCompleted || isStatusCompleted;
+  const canScheduleOrViewMatches =
+    !!tournamentStartDate &&
+    !!scheduleReleaseDate &&
+    today >= scheduleReleaseDate &&
+    today < tournamentStartDate;
+  const scheduleReleaseDateLabel = scheduleReleaseDate
+    ? scheduleReleaseDate.toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+    : '';
   const approvedTeamsCount = Object.values(approvedStatus).filter(Boolean).length;
   const pendingTeamsCount = Math.max(teamCount - approvedTeamsCount, 0);
   const tournamentSlots = Number(tournament?.teams || 0);
@@ -246,6 +263,17 @@ export default function TournamentDetailsScreen() {
     if (value.includes('indoor')) return '🏟️';
 
     return '📍';
+  };
+
+  const getMinPlayersRequiredForFormat = () => {
+    const tournamentType = String(tournament?.tournament_type || '').toLowerCase();
+    const matchType = String(tournament?.match_type || '').toLowerCase();
+
+    if (tournamentType.includes('turf') || matchType.includes('turf')) {
+      return 6;
+    }
+
+    return 11;
   };
 
   useEffect(() => {
@@ -316,6 +344,11 @@ export default function TournamentDetailsScreen() {
   };
 
   const loadMatches = async (tournamentId: number) => {
+    if (matchesLoadInFlightRef.current === tournamentId) {
+      return;
+    }
+
+    matchesLoadInFlightRef.current = tournamentId;
     setMatchesLoading(true);
     try {
       const response = await fetchTournamentMatches(tournamentId);
@@ -324,6 +357,7 @@ export default function TournamentDetailsScreen() {
     } catch {
       setMatches([]);
     } finally {
+      matchesLoadInFlightRef.current = null;
       setMatchesLoading(false);
       requestAnimationFrame(() => {
         detailsScrollRef.current?.scrollTo({ y: scrollOffsetRef.current, animated: false });
@@ -408,8 +442,11 @@ export default function TournamentDetailsScreen() {
         ? (playersByTeam as Record<string, any[]>)[awayTeamId]
         : [];
 
+      const minPlayersRequired = getMinPlayersRequiredForFormat();
+      const formatLabel = minPlayersRequired === 6 ? 'Turf' : 'Open Ground';
+
       const hasValidSquad = (players: any[]) => {
-        if (players.length !== 11) return false;
+        if (players.length < minPlayersRequired) return false;
         const hasCaptain = players.some((p) => p?.isCaptain === true);
         const hasViceCaptain = players.some((p) => p?.isViceCaptain === true);
         return hasCaptain && hasViceCaptain;
@@ -418,7 +455,7 @@ export default function TournamentDetailsScreen() {
       if (!hasValidSquad(homePlayers) || !hasValidSquad(awayPlayers)) {
         Alert.alert(
           'Cannot toss',
-          'Before toss, both teams must have exactly 11 players with one captain and one vice-captain.',
+          `Before toss, both teams must have at least ${minPlayersRequired} players for ${formatLabel} format, with one captain and one vice-captain.`,
         );
         return;
       }
@@ -550,11 +587,13 @@ export default function TournamentDetailsScreen() {
     fetchJoinedTeams();
   }, [tournament]);
 
-  useEffect(() => {
-    if (tournament?.id) {
-      loadMatches(tournament.id);
-    }
-  }, [tournament?.id]);
+  useFocusEffect(
+    useCallback(() => {
+      if (tournament?.id) {
+        loadMatches(tournament.id);
+      }
+    }, [tournament?.id]),
+  );
 
   const loadTeams = async () => {
     try {
@@ -755,7 +794,9 @@ export default function TournamentDetailsScreen() {
             <ArrowLeft size={24} color="#111827" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Tournament Details</Text>
-          <View style={styles.placeholder} />
+          <TouchableOpacity style={styles.homeButton} onPress={() => router.replace('/(tabs)')}>
+            <Text style={styles.homeButtonText}>Home</Text>
+          </TouchableOpacity>
         </View>
 
         {loading ? (
@@ -927,8 +968,17 @@ export default function TournamentDetailsScreen() {
                 )}
 
                 {canManageTournament && !isTournamentCompleted && (
+                  <>
+                  {isTournamentOwner && !!tournamentStartDate && !!scheduleReleaseDate && matches.length === 0 && !canScheduleOrViewMatches && (
+                    <View style={styles.scheduleInfoCard}>
+                      <Text style={styles.scheduleInfoTitle}>Schedule Matches Availability</Text>
+                      <Text style={styles.scheduleInfoText}>
+                        {`Schedule Matches will be active 2 days before tournament start date (${scheduleReleaseDateLabel}).`}
+                      </Text>
+                    </View>
+                  )}
                   <View style={styles.actionButtons}>
-                    {canManageTournament && isTournamentActive && isTournamentFullApproved && matches.length === 0 && (
+                    {canManageTournament && canScheduleOrViewMatches && isTournamentFullApproved && matches.length === 0 && (
                       <TouchableOpacity
                         onPress={handleScheduleMatches}
                         style={[styles.joinButton, scheduleLoading && styles.disabledButton]}
@@ -950,6 +1000,7 @@ export default function TournamentDetailsScreen() {
                       </View>
                     )}
                   </View>
+                  </>
                 )}
 
                 {isAdmin && (
@@ -961,7 +1012,7 @@ export default function TournamentDetailsScreen() {
                 </>
                 )}
 
-                {matches.length > 0 && !isFinalCompleted && (
+                {matches.length > 0 && (
                   <View style={styles.matchSection}>
                     <Text style={styles.sectionTitle}>Match Schedule</Text>
                     {matchesLoading ? (
@@ -1030,14 +1081,7 @@ export default function TournamentDetailsScreen() {
                                         </Text>
                                       </TouchableOpacity>
                                     )}
-                                    {canComplete && (
-                                      <TouchableOpacity
-                                        style={[styles.matchActionButton, styles.matchCompleteButton]}
-                                        onPress={() => handleCompleteMatch(match)}
-                                      >
-                                        <Text style={styles.matchActionButtonText}>{match.winnerTeamId ? 'Change Winner' : 'Set Winner'}</Text>
-                                      </TouchableOpacity>
-                                    )}
+                                    
                                   </View>
                                 )}
                               </View>
@@ -1144,7 +1188,7 @@ export default function TournamentDetailsScreen() {
                           <Text style={styles.tossDecisionText}>{tossModalMatch.homeTeamName} Batting</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={[styles.tossDecisionButton, tossSubmitting && styles.disabledButton]}
+                          style={[styles.tossDecisionButton, styles.tossDecisionButtonSecondary, tossSubmitting && styles.disabledButton]}
                           disabled={tossSubmitting}
                           onPress={() => saveTossTeams(Number(tossModalMatch.awayTeamId), Number(tossModalMatch.homeTeamId))}
                         >
@@ -1186,7 +1230,7 @@ export default function TournamentDetailsScreen() {
 
                   {!!winnerPickerMatch?.awayTeamId && !!winnerPickerMatch?.awayTeamName && (
                     <TouchableOpacity
-                      style={[styles.winnerOptionButton, winnerSubmitting && styles.disabledButton]}
+                      style={[styles.winnerOptionButton, styles.winnerOptionButtonSecondary, winnerSubmitting && styles.disabledButton]}
                       disabled={winnerSubmitting}
                       onPress={() => submitWinner(Number(winnerPickerMatch.awayTeamId), String(winnerPickerMatch.awayTeamName))}
                     >
@@ -1830,6 +1874,22 @@ const styles = StyleSheet.create({
   placeholder: {
     width: 40,
   },
+  homeButton: {
+    minWidth: 48,
+    height: 32,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#22C55E',
+    borderWidth: 1,
+    borderColor: '#16A34A',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  homeButtonText: {
+    fontSize: 12,
+    fontFamily: 'Inter-SemiBold',
+    color: '#FFFFFF',
+  },
   editButton: {
     marginRight: 10,
   },
@@ -2078,13 +2138,15 @@ const styles = StyleSheet.create({
   detailsToggleButton: {
     marginBottom: 14,
     alignSelf: 'flex-start',
-    backgroundColor: '#E0E7FF',
+    backgroundColor: '#22C55E',
+    borderWidth: 1,
+    borderColor: '#16A34A',
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   detailsToggleButtonText: {
-    color: '#1D4ED8',
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
   },
@@ -2231,6 +2293,9 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     alignItems: 'center',
   },
+  tossDecisionButtonSecondary: {
+    backgroundColor: '#2563EB',
+  },
   tossDecisionText: {
     color: '#FFFFFF',
     fontWeight: '700',
@@ -2254,7 +2319,9 @@ const styles = StyleSheet.create({
   },
   matchActionButton: {
     flex: 1,
-    backgroundColor: '#2563EB',
+    backgroundColor: '#22C55E',
+    borderWidth: 1,
+    borderColor: '#16A34A',
     borderRadius: 8,
     paddingVertical: 8,
     alignItems: 'center',
@@ -2263,7 +2330,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#16A34A',
   },
   matchScorecardButton: {
-    backgroundColor: '#0EA5E9',
+    backgroundColor: '#2563EB',
+    borderColor: '#1D4ED8',
   },
   matchActionButtonText: {
     color: '#FFFFFF',
@@ -2405,6 +2473,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 24,
+  },
+  scheduleInfoCard: {
+    marginTop: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  scheduleInfoTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1D4ED8',
+    marginBottom: 4,
+  },
+  scheduleInfoText: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#1E3A8A',
+    fontWeight: '500',
   },
   joinButton: {
     flex: 1,
@@ -2571,6 +2660,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
     marginBottom: 10,
+  },
+  winnerOptionButtonSecondary: {
+    backgroundColor: '#2563EB',
   },
   winnerOptionText: {
     color: '#FFFFFF',
