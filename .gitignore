@@ -32,8 +32,6 @@ yarn-error.*
 
 # local env files
 .env*.local
-.env.development
-.env.production
 
 # local/editor metadata
 .vscode/
@@ -48,9 +46,6 @@ CLAUDE.md
 
 # typescript
 *.tsbuildinfo
-
-example
-
 # generated native folders
 /ios
 /android
