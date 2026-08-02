@@ -32,19 +32,6 @@ yarn-error.*
 
 # local env files
 .env*.local
-.env.development
-.env.production
-
-# local/editor metadata
-.vscode/
-.claude/
-
-# local AI assistant notes
-AGENTS.md
-CLAUDE.md
-
-# local npm config
-.npmrc
 
 # typescript
 *.tsbuildinfo
