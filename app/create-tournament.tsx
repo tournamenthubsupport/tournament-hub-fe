@@ -1,20 +1,20 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import {
-  ArrowLeft,
-  Calendar
+    ArrowLeft,
+    Calendar
 } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import DropDownPicker from 'react-native-dropdown-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -137,10 +137,8 @@ const CreateTournament = () => {
   };
 
   const stripCountryCode = (number: string, code = "91"): string => {
-    const digitsOnly = String(number || '').replace(/\D/g, '');
-    return digitsOnly.startsWith(code) && digitsOnly.length > 10
-      ? digitsOnly.slice(code.length)
-      : digitsOnly;
+    const normalized = number.replace("+", "");
+    return normalized.startsWith(code) ? normalized.slice(code.length) : normalized;
   };
 
   const formatDateForInput = (date: Date) => {
@@ -638,9 +636,7 @@ const CreateTournament = () => {
             <ArrowLeft size={24} color="#111827" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Create Tournament</Text>
-          <TouchableOpacity style={styles.homeButton} onPress={() => router.replace('/(tabs)')}>
-            <Text style={styles.homeButtonText}>Home</Text>
-          </TouchableOpacity>
+          <View style={styles.placeholder} />
         </View>
 
         <View style={styles.stepIndicator}>
@@ -742,20 +738,6 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     width: 40,
-  },
-  homeButton: {
-    minWidth: 48,
-    height: 32,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: '#ECFDF5',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  homeButtonText: {
-    fontSize: 12,
-    fontFamily: 'Inter-SemiBold',
-    color: '#166534',
   },
   stepIndicator: {
     flexDirection: 'row',

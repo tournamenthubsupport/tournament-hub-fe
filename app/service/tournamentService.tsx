@@ -4,57 +4,8 @@ import { API_BASE_URL } from '../constants/apiBaseUrl';
 
 const BASE_URL = API_BASE_URL;
 
-type TournamentQuery = {
-  city?: string;
-  status?: 'upcoming' | 'active' | 'completed';
-};
-
-type TournamentCacheEntry = {
-  value: any;
-  createdAt: number;
-};
-
-const TOURNAMENT_CACHE_TTL_MS = 45 * 1000;
-const tournamentsCache = new Map<string, TournamentCacheEntry>();
-
-const toTournamentCacheKey = (options?: TournamentQuery) => {
-  const city = String(options?.city || '').trim().toLowerCase();
-  const status = String(options?.status || '').trim().toLowerCase();
-  return `city:${city}|status:${status}`;
-};
-
-const getCachedTournaments = (options?: TournamentQuery) => {
-  const key = toTournamentCacheKey(options);
-  const existing = tournamentsCache.get(key);
-  if (!existing) return null;
-
-  const isFresh = Date.now() - existing.createdAt < TOURNAMENT_CACHE_TTL_MS;
-  if (!isFresh) {
-    tournamentsCache.delete(key);
-    return null;
-  }
-
-  return existing.value;
-};
-
-const setCachedTournaments = (options: TournamentQuery | undefined, value: any) => {
-  const key = toTournamentCacheKey(options);
-  tournamentsCache.set(key, {
-    value,
-    createdAt: Date.now(),
-  });
-};
-
-export const fetchTournaments = async (
-  options?: TournamentQuery,
-  requestOptions?: { forceRefresh?: boolean },
-) => {
+export const fetchTournaments = async (options?: { city?: string; status?: 'upcoming' | 'active' | 'completed' }) => {
   try {
-    if (!requestOptions?.forceRefresh) {
-      const cached = getCachedTournaments(options);
-      if (cached) return cached;
-    }
-
     const params = new URLSearchParams();
     if (options?.city?.trim()) {
       params.set('city', options.city.trim());
@@ -66,24 +17,10 @@ export const fetchTournaments = async (
     const query = params.toString();
     const res = await fetch(`${BASE_URL}/tournaments${query ? `?${query}` : ''}`);
     if (!res.ok) throw new Error('Failed to fetch tournaments');
-    const data = await res.json();
-    setCachedTournaments(options, data);
-    return data;
+    return await res.json();
   } catch (err) {
     console.error('API Error:', err);
     throw err;
-  }
-};
-
-export const prefetchHomeInitialData = async (city = 'Chennai') => {
-  const normalizedCity = String(city || 'Chennai').trim() || 'Chennai';
-  try {
-    await Promise.all([
-      fetchTournaments({ city: normalizedCity, status: 'upcoming' }),
-      fetchTournaments({ city: normalizedCity, status: 'active' }),
-    ]);
-  } catch {
-    // Prefetch is best-effort. Home screen will fetch on demand if this fails.
   }
 };
 

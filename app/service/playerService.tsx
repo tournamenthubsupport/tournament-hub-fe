@@ -13,16 +13,6 @@ export const insertPlayer = async (playerData: any) => {
     }
   };
 
-export const insertPlayersBulk = async (players: any[]) => {
-  try {
-    const response = await axios.post(`${BASE_URL}/players/bulk-add`, { players });
-    return response.data;
-  } catch (error) {
-    console.error('Error bulk inserting players:', error);
-    throw error;
-  }
-};
-
 
   export const searchPlayers = async (searchTerm: string) => {
     try {
@@ -33,4 +23,4 @@ export const insertPlayersBulk = async (players: any[]) => {
       return [];
     }
   };
-export default { insertPlayer, insertPlayersBulk, searchPlayers };
+export default { insertPlayer, searchPlayers };

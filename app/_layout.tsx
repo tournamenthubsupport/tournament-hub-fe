@@ -1,19 +1,19 @@
+import { useFrameworkReady } from '../hooks/useFrameworkReady';
 import {
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
 } from '@expo-google-fonts/inter';
 import {
-    Poppins_500Medium,
-    Poppins_600SemiBold,
-    Poppins_700Bold,
+  Poppins_500Medium,
+  Poppins_600SemiBold,
+  Poppins_700Bold,
 } from '@expo-google-fonts/poppins';
 import { useFonts } from 'expo-font';
 import { SplashScreen, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { useFrameworkReady } from '../hooks/useFrameworkReady';
 import { AuthProvider } from './auth/auth-context'; // path to context
 
 SplashScreen.preventAutoHideAsync();
@@ -45,9 +45,6 @@ export default function RootLayout() {
     <>
      <AuthProvider>
       <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="launch" />
-        <Stack.Screen name="logo-preview" />
         <Stack.Screen name="auth" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="create-tournament" />

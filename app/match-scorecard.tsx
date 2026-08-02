@@ -1,26 +1,24 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from './auth/auth-context';
 import {
-  addMatchBallEvent,
-  completeMatchScorecard,
-  completeTournamentMatch,
-  fetchMatchScorecard,
-  replaceLastMatchBallEvent,
-  resetMatchScorecard,
-  setupMatchScorecard,
-  undoLastMatchBallEvent,
+    addMatchBallEvent,
+    completeMatchScorecard,
+    fetchMatchScorecard,
+    replaceLastMatchBallEvent,
+    resetMatchScorecard,
+    setupMatchScorecard,
+    undoLastMatchBallEvent,
 } from './service/tournamentService';
 
 type ScoreEvent = {
@@ -37,9 +35,7 @@ type MatchScorecardResponse = {
   match: {
     id: number;
     status: string;
-    homeTeamId?: number;
     homeTeamName: string;
-    awayTeamId?: number;
     awayTeamName: string;
     battingTeamName: string;
     fieldingTeamName: string;
@@ -152,8 +148,6 @@ export default function MatchScorecardScreen() {
   const [selectedOvers, setSelectedOvers] = useState<number>(5);
   const [editingLastBall, setEditingLastBall] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
-  const [showWinnerPicker, setShowWinnerPicker] = useState(false);
-  const [winnerSubmitting, setWinnerSubmitting] = useState(false);
 
   const loadScorecard = async (options?: { silent?: boolean }) => {
     if (!Number.isInteger(matchId) || matchId <= 0) {
@@ -273,13 +267,6 @@ export default function MatchScorecardScreen() {
 
     return `${winnerName} won by ${margin}`;
   })();
-  const hasWinnerSet = Number(resultSummary?.winnerTeamId || 0) > 0;
-  const isTieOrDraw =
-    isCompleted && (
-      ['tie', 'draw'].includes(String(resultSummary?.resultType || '').toLowerCase()) ||
-      officialResultMessage === 'Match tied' ||
-      (inningsOneRuns > 0 && inningsOneRuns === inningsTwoRuns)
-    );
 
   const setupButtonLabel = isCompleted
     ? 'Scorecard Completed'
@@ -290,32 +277,10 @@ export default function MatchScorecardScreen() {
         : 'Start Live Score';
 
   const canEditScorecard = !!data?.permissions?.canEdit;
-  const showWinnerAction = canEditScorecard && isTieOrDraw && !hasWinnerSet;
-  const heroEyebrowLabel = isCompleted ? 'Scorecard' : 'Live Score';
 
   const canSaveSetup = canEditScorecard && !saving && !isCompleted;
   const canScoreBall = canEditScorecard && !saving && !isCompleted && !isInningsBreak && !!data?.scorecard;
   const canCompleteMatch = canEditScorecard && !saving && !isCompleted && !!data?.scorecard;
-
-  const submitWinner = async (teamId: number) => {
-    if (!organiserContact) {
-      Alert.alert('Missing organiser', 'Unable to find organiser contact in session.');
-      return;
-    }
-
-    try {
-      setWinnerSubmitting(true);
-      await completeTournamentMatch(matchId, organiserContact, teamId);
-      setShowWinnerPicker(false);
-      await loadScorecard({ silent: true });
-      navigateToTournamentSchedule();
-    } catch (error) {
-      const message = toUserFacingScorecardError(error, 'Failed to set winner');
-      Alert.alert('Error', message);
-    } finally {
-      setWinnerSubmitting(false);
-    }
-  };
 
   const handleSetupScorecard = async () => {
     if (!organiserContact) {
@@ -402,7 +367,7 @@ export default function MatchScorecardScreen() {
             try {
               await completeMatchScorecard(matchId, organiserContact);
               await loadScorecard({ silent: true });
-              navigateToTournamentSchedule();
+              Alert.alert('Completed', 'Scorecard marked as completed.');
             } catch (error) {
               const message = toUserFacingScorecardError(error, 'Failed to complete scorecard');
               Alert.alert('Error', message);
@@ -466,18 +431,6 @@ export default function MatchScorecardScreen() {
     router.replace('/(tabs)');
   };
 
-  const navigateToTournamentSchedule = () => {
-    if (Number.isInteger(tournamentId) && tournamentId > 0) {
-      router.replace({
-        pathname: '/tournament-details',
-        params: { id: String(tournamentId) },
-      });
-      return;
-    }
-
-    handleBackNavigation();
-  };
-
   if (loading) {
     return (
       <SafeAreaView style={styles.loaderWrap}>
@@ -501,13 +454,11 @@ export default function MatchScorecardScreen() {
           <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>Match Scorecard</Text>
-        <TouchableOpacity style={styles.homeButton} onPress={() => router.replace('/(tabs)')}>
-          <Text style={styles.homeButtonText}>Home</Text>
-        </TouchableOpacity>
+        <View style={styles.topBarSpacer} />
       </View>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.heroCard}>
-          <Text style={styles.heroEyebrow}>{heroEyebrowLabel}</Text>
+          <Text style={styles.heroEyebrow}>Live Score</Text>
           <Text style={styles.heroTitle}>{data.match.homeTeamName}</Text>
           <Text style={styles.heroVs}>vs</Text>
           <Text style={styles.heroTitle}>{data.match.awayTeamName}</Text>
@@ -547,20 +498,6 @@ export default function MatchScorecardScreen() {
           ) : null}
 
         </View>
-
-          {showWinnerAction && !isCompleted ? (
-            <View style={styles.tieActionBanner}>
-              <Text style={styles.tieActionTitle}>Match is tied</Text>
-              <Text style={styles.tieActionText}>You can choose the winning team from here.</Text>
-              <TouchableOpacity
-                style={[styles.setWinnerButton, winnerSubmitting && styles.disabledButton]}
-                onPress={() => setShowWinnerPicker(true)}
-                disabled={winnerSubmitting}
-              >
-                <Text style={styles.setWinnerButtonText}>Set Winner</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
 
         {!canEditScorecard ? (
           <View style={styles.breakBanner}>
@@ -661,15 +598,6 @@ export default function MatchScorecardScreen() {
             <Text style={styles.breakBannerText}>
               {officialResultMessage ? `${officialResultMessage}.` : 'Score entry is hidden after completion.'} This page is now view-only scorecard.
             </Text>
-            {showWinnerAction ? (
-              <TouchableOpacity
-                style={[styles.setWinnerButton, winnerSubmitting && styles.disabledButton]}
-                onPress={() => setShowWinnerPicker(true)}
-                disabled={winnerSubmitting}
-              >
-                <Text style={styles.setWinnerButtonText}>Set Winner</Text>
-              </TouchableOpacity>
-            ) : null}
           </View>
         ) : null}
 
@@ -709,50 +637,6 @@ export default function MatchScorecardScreen() {
             </TouchableOpacity>
           </>
         ) : null}
-
-        <Modal visible={showWinnerPicker} animationType="fade" transparent>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalContent}>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => {
-                  if (!winnerSubmitting) setShowWinnerPicker(false);
-                }}
-              >
-                <Text style={styles.closeButtonText}>✕</Text>
-              </TouchableOpacity>
-
-              <Text style={styles.modalTitle}>Set Winner</Text>
-              <Text style={styles.winnerPickerSubtitle}>Select the team to award the match</Text>
-
-              <TouchableOpacity
-                style={[styles.winnerOptionButton, (!data.match.homeTeamId || winnerSubmitting) && styles.disabledButton]}
-                disabled={winnerSubmitting || !data.match.homeTeamId}
-                onPress={() => submitWinner(Number(data.match.homeTeamId || 0))}
-              >
-                <Text style={styles.winnerOptionText}>{data.match.homeTeamName}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.winnerOptionButton, styles.winnerOptionButtonSecondary, (!data.match.awayTeamId || winnerSubmitting) && styles.disabledButton]}
-                disabled={winnerSubmitting || !data.match.awayTeamId}
-                onPress={() => submitWinner(Number(data.match.awayTeamId || 0))}
-              >
-                <Text style={styles.winnerOptionText}>{data.match.awayTeamName}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.winnerCancelButton}
-                onPress={() => {
-                  if (!winnerSubmitting) setShowWinnerPicker(false);
-                }}
-                disabled={winnerSubmitting}
-              >
-                <Text style={styles.winnerCancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
       </ScrollView>
     </SafeAreaView>
   );
@@ -792,21 +676,6 @@ const styles = StyleSheet.create({
   topBarSpacer: {
     width: 52,
   },
-  homeButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: '#22C55E',
-    borderWidth: 1,
-    borderColor: '#16A34A',
-    minWidth: 52,
-    alignItems: 'center',
-  },
-  homeButtonText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
   container: {
     padding: 16,
     paddingBottom: 36,
@@ -819,15 +688,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F7FB',
   },
   heroCard: {
-    backgroundColor: '#DCFCE7',
-    borderWidth: 1,
-    borderColor: '#86EFAC',
+    backgroundColor: '#0F172A',
     borderRadius: 24,
     padding: 20,
     marginBottom: 16,
   },
   heroEyebrow: {
-    color: '#047857',
+    color: '#93C5FD',
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.8,
@@ -835,14 +702,14 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   heroTitle: {
-    color: '#064E3B',
+    color: '#FFFFFF',
     fontSize: 24,
     fontWeight: '800',
     lineHeight: 30,
     textAlign: 'center',
   },
   heroVs: {
-    color: '#2563EB',
+    color: '#60A5FA',
     fontSize: 14,
     fontWeight: '800',
     textAlign: 'center',
@@ -850,7 +717,7 @@ const styles = StyleSheet.create({
   },
   heroMeta: {
     marginTop: 14,
-    color: '#0F766E',
+    color: '#CBD5E1',
     fontSize: 13,
     fontWeight: '700',
     textAlign: 'center',
@@ -919,29 +786,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     marginTop: 4,
-  },
-  tieActionBanner: {
-    backgroundColor: '#F5F3FF',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#C4B5FD',
-  },
-  tieActionTitle: {
-    color: '#5B21B6',
-    fontSize: 15,
-    fontWeight: '800',
-    marginBottom: 4,
-    textAlign: 'center',
-  },
-  tieActionText: {
-    color: '#6D28D9',
-    fontSize: 13,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 10,
-    lineHeight: 18,
   },
   inningsMetaCard: {
     marginTop: 12,
@@ -1039,9 +883,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   setupButton: {
-    backgroundColor: '#22C55E',
-    borderWidth: 1,
-    borderColor: '#16A34A',
+    backgroundColor: '#2563EB',
     borderRadius: 16,
     paddingVertical: 14,
     alignItems: 'center',
@@ -1153,18 +995,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
   },
-  setWinnerButton: {
-    marginTop: 10,
-    backgroundColor: '#7C3AED',
-    borderRadius: 16,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  setWinnerButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-  },
   completeHintText: {
     marginTop: 8,
     marginBottom: 8,
@@ -1193,83 +1023,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#DC2626',
     fontWeight: '700',
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    width: '90%',
-    maxHeight: '80%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 20,
-    elevation: 5,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 12,
-    textAlign: 'center',
-    color: '#333',
-  },
-  closeButton: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    zIndex: 2,
-    backgroundColor: '#eee',
-    borderRadius: 20,
-    width: 36,
-    height: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
-    elevation: 3,
-  },
-  closeButtonText: {
-    fontSize: 20,
-    color: '#EF4444',
-    fontWeight: 'bold',
-  },
-  winnerPickerSubtitle: {
-    fontSize: 14,
-    color: '#64748B',
-    textAlign: 'center',
-    marginBottom: 14,
-  },
-  winnerOptionButton: {
-    backgroundColor: '#16A34A',
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    marginBottom: 10,
-  },
-  winnerOptionButtonSecondary: {
-    backgroundColor: '#2563EB',
-  },
-  winnerOptionText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  winnerCancelButton: {
-    marginTop: 4,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 10,
-    paddingVertical: 11,
-    paddingHorizontal: 14,
-  },
-  winnerCancelText: {
-    color: '#334155',
-    fontSize: 14,
-    fontWeight: '700',
-    textAlign: 'center',
   },
 });

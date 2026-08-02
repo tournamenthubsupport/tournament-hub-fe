@@ -28,7 +28,7 @@ import {
     type AdminNotification,
     type UserSupportRequest,
 } from '../service/authService';
-import { getPlayersForTeams, getTeamsForPlayer } from '../service/teamPlayerService';
+import { getTeamsForPlayer } from '../service/teamPlayerService';
 import { fetchTeamsByMobile } from '../service/teamsService';
 import { fetchTournamentsByContact } from '../service/tournamentService';
 import { getTournamentsForTeams } from '../service/tournamentTeamsService';
@@ -251,36 +251,6 @@ export default function ProfileScreen() {
           return;
         }
 
-        const enrichTeamsWithMemberCounts = async (teams: any[]) => {
-          const teamList = Array.isArray(teams) ? teams : [];
-          if (teamList.length === 0) return [];
-
-          const teamIds = teamList
-            .map((team: any) => String(team?.id || '').trim())
-            .filter(Boolean);
-
-          if (teamIds.length === 0) return teamList;
-
-          try {
-            const playersByTeam = await getPlayersForTeams(teamIds);
-            const counts: Record<string, number> = {};
-
-            Object.entries((playersByTeam || {}) as Record<string, any[]>).forEach(([teamId, players]) => {
-              counts[String(teamId)] = Array.isArray(players) ? players.length : 0;
-            });
-
-            return teamList.map((team: any) => ({
-              ...team,
-              members: Number(counts[String(team.id)] ?? team?.members ?? 0),
-            }));
-          } catch {
-            return teamList.map((team: any) => ({
-              ...team,
-              members: Number(team?.members ?? 0),
-            }));
-          }
-        };
-
         if (isOrganizer) {
           const normalizedPhone = stripCountryCode(user.phone);
           const [teamsData, createdTournamentData] = await Promise.all([
@@ -288,7 +258,7 @@ export default function ProfileScreen() {
             fetchTournamentsByContact(normalizedPhone).catch(() => ({ tournaments: [] }))
           ]);
 
-          const teams = await enrichTeamsWithMemberCounts(teamsData?.teams || []);
+          const teams = teamsData?.teams || [];
           const teamIds = teams.map((team: any) => team.id.toString());
           const joinedByTeams = teamIds.length > 0
             ? await getTournamentsForTeams(teamIds as any)
@@ -318,7 +288,7 @@ export default function ProfileScreen() {
           setUpcomingJoinedTournaments(byRecent(upcomingJoined));
         } else {
           const teamsData = await getTeamsForPlayer(String(user.phone || '').trim());
-          const teams = await enrichTeamsWithMemberCounts(teamsData?.teams || []);
+          const teams = teamsData?.teams || [];
           const teamIds = teams.map((team: any) => team.id.toString());
           const joinedByTeams = teamIds.length > 0
             ? await getTournamentsForTeams(teamIds as any)

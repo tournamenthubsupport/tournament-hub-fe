@@ -224,40 +224,40 @@ export const Header: React.FC<HeaderProps> = ({
           style={styles.logoModernTop}
           resizeMode="contain"
         />
-        <View style={styles.infoRow}>
-          <View style={styles.userTextBlock}>
-            <Text style={styles.greetingModern}>Hi, {formatUserName(displayName)}</Text>
-            <Text style={styles.subtitleModern}>Tournaments and live updates</Text>
-          </View>
-
-          <View style={styles.headerActions}>
-            {!isGuest ? (
-              <View style={styles.bellContainer}>
-                <TouchableOpacity style={styles.bellButton} onPress={handleBellPress}>
-                  <Bell size={22} color="#16A34A" />
-                  {badgeCount > 0 && (
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>{badgeCount}</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              </View>
-            ) : null}
-
-            {isGuest ? (
-              <TouchableOpacity
-                style={[styles.signInLink, styles.authCta]}
-                onPress={() => router.push({ pathname: '/auth/auth-screen', params: { returnTo: '/(tabs)' } })}
-              >
-                <Text style={styles.signInLinkText}>Sign In</Text>
+        <View style={styles.headerActions}>
+          {!isGuest ? (
+            <View style={styles.bellContainer}>
+              <TouchableOpacity style={styles.bellButton} onPress={handleBellPress}>
+                <Bell size={22} color="#0EA5E9" />
+                {badgeCount > 0 && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>{badgeCount}</Text>
+                  </View>
+                )}
               </TouchableOpacity>
-            ) : (
-              <TouchableOpacity style={[styles.signOutLink, styles.authCta]} onPress={handleSignOut}>
-                <Text style={styles.signOutLinkText}>Sign Out</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+            </View>
+          ) : null}
+
+          {isGuest ? (
+            <TouchableOpacity
+              style={styles.signInLink}
+              onPress={() => router.push({ pathname: '/auth/auth-screen', params: { returnTo: '/(tabs)' } })}
+            >
+              <Text style={styles.signInLinkText}>Sign In</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
+      </View>
+      <View style={[styles.infoRow, isGuest && styles.infoRowGuest]}>
+        <View style={[styles.userTextBlock, isGuest && styles.userTextBlockGuest]}>
+          <Text style={[styles.greetingModern, isGuest && styles.greetingGuest]}>Hi, {formatUserName(displayName)}</Text>
+          <Text style={[styles.subtitleModern, isGuest && styles.subtitleGuest]}>Tournaments and live updates</Text>
+        </View>
+        {!isGuest ? (
+          <TouchableOpacity style={styles.signOutLink} onPress={handleSignOut}>
+            <Text style={styles.signOutLinkText}>Sign Out</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
       <Modal
         visible={showModal}
@@ -343,7 +343,7 @@ export const Header: React.FC<HeaderProps> = ({
               <Text>No notifications available.</Text>
             )}
             <TouchableOpacity style={{ marginTop: 16, alignSelf: 'flex-end' }} onPress={() => setShowModal(false)}>
-              <Text style={{ color: '#16A34A', fontWeight: '600', fontSize: 16 }}>Close</Text>
+              <Text style={{ color: '#2563EB', fontWeight: '600', fontSize: 16 }}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -366,25 +366,31 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   headerTopRow: {
-    minHeight: 154,
+    minHeight: 124,
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
+    position: 'relative',
   },
   logoModernTop: {
     width: 178,
     height: 178,
-    marginBottom: -22,
   },
   infoRow: {
-    marginTop: -4,
+    marginTop: 6,
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
   },
+  infoRowGuest: {
+    justifyContent: 'center',
+  },
   userTextBlock: {
     flex: 1,
+  },
+  userTextBlockGuest: {
+    alignItems: 'center',
   },
   greetingModern: {
     fontSize: 20,
@@ -392,13 +398,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111827',
   },
+  greetingGuest: {
+    textAlign: 'center',
+  },
   subtitleModern: {
     marginTop: 3,
     fontSize: 13,
     color: '#64748B',
     lineHeight: 18,
   },
+  subtitleGuest: {
+    textAlign: 'center',
+  },
   headerActions: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
@@ -408,9 +423,9 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#ECFDF5',
+    backgroundColor: '#EFF8FF',
     borderWidth: 1,
-    borderColor: '#86EFAC',
+    borderColor: '#BAE6FD',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -425,32 +440,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     paddingVertical: 10,
     borderRadius: 999,
-    backgroundColor: '#22C55E',
+    backgroundColor: '#F8FAFF',
     borderWidth: 1,
-    borderColor: '#16A34A',
+    borderColor: '#C7D2FE',
   },
   signInLinkText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  authCta: {
-    minWidth: 86,
-    alignItems: 'center',
-    justifyContent: 'center',
+    color: '#3730A3',
   },
   signOutLink: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: '#22C55E',
+    backgroundColor: '#FEF2F2',
     borderWidth: 1,
-    borderColor: '#16A34A',
+    borderColor: '#FECACA',
   },
   signOutLinkText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#B91C1C',
   },
   badge: {
     position: 'absolute',
