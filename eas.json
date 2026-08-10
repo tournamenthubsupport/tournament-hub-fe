@@ -10,12 +10,22 @@
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_BASE_URL": "https://tournament-hub.onrender.com/api"
+      },
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_BASE_URL": "https://tournament-hub.onrender.com/api"
+      },
+      "android": {
+        "buildType": "apk"
+      }
     }
   },
   "submit": {

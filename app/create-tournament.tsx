@@ -4,7 +4,7 @@ import {
   ArrowLeft,
   Calendar
 } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -94,6 +94,7 @@ const CreateTournament = () => {
   const [ground, setGround] = useState('');
   const [groundSuggestions, setGroundSuggestions] = useState<Array<{ ground: string; location?: string; state?: string; city?: string }>>([]);
   const [showGroundSuggestions, setShowGroundSuggestions] = useState(false);
+  const selectingGroundSuggestionRef = useRef(false);
   const [organizerName, setOrganizerName] = useState('');
   const [organizerContact, setOrganizerContact] = useState('');
   const [totalTeams, setTotalTeams] = useState('');
@@ -259,7 +260,14 @@ const CreateTournament = () => {
           value={ground}
           onChangeText={(text) => setGround(normalizeTextInput(text))}
           onFocus={() => setShowGroundSuggestions(true)}
-          onBlur={() => setTimeout(() => setShowGroundSuggestions(false), 150)}
+          onBlur={() => {
+            // On mobile, blur can fire before list item onPress; keep the list open during item tap.
+            if (selectingGroundSuggestionRef.current) {
+              selectingGroundSuggestionRef.current = false;
+              return;
+            }
+            setTimeout(() => setShowGroundSuggestions(false), 150);
+          }}
           placeholderTextColor="#9CA3AF"
           autoCapitalize="words"
           autoCorrect={false}
@@ -270,6 +278,9 @@ const CreateTournament = () => {
               <TouchableOpacity
                 key={`${item.ground}-${item.location || ''}-${item.state || ''}-${item.city || ''}`}
                 style={styles.suggestionItem}
+                onPressIn={() => {
+                  selectingGroundSuggestionRef.current = true;
+                }}
                 onPress={() => {
                   setGround(item.ground || '');
                   setLocation(item.location || '');
@@ -665,7 +676,11 @@ const CreateTournament = () => {
           ))}
         </View>
 
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           {step === 1 && renderStep1()}
           {step === 2 && renderStep2()}
           {step === 3 && renderStep3()}

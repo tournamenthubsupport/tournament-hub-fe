@@ -91,6 +91,40 @@ const buildStateItems = () =>
     value: state,
   }));
 
+const toMatchModel = (row: any): TournamentMatch => ({
+  id: Number(row?.id ?? 0),
+  tournamentId: Number(row?.tournamentId ?? row?.tournament_id ?? 0),
+  homeTeamId: row?.homeTeamId ?? row?.home_team_id ?? null,
+  homeTeamName: row?.homeTeamName ?? row?.home_team_name ?? null,
+  awayTeamId: row?.awayTeamId ?? row?.away_team_id ?? null,
+  awayTeamName: row?.awayTeamName ?? row?.away_team_name ?? null,
+  winnerTeamId: row?.winnerTeamId ?? row?.winner_team_id ?? null,
+  winnerTeamName: row?.winnerTeamName ?? row?.winner_team_name ?? null,
+  matchDate: row?.matchDate ?? row?.match_date ?? '',
+  venue: row?.venue ?? null,
+  status: row?.status ?? '',
+  round: row?.round ?? '',
+  nextMatchId: row?.nextMatchId ?? row?.next_match_id ?? null,
+  nextSlot: row?.nextSlot ?? row?.next_slot ?? null,
+  homeFromMatchId: row?.homeFromMatchId ?? row?.home_from_match_id ?? null,
+  awayFromMatchId: row?.awayFromMatchId ?? row?.away_from_match_id ?? null,
+  tossResult: row?.tossResult ?? row?.toss_result ?? null,
+  tossWinnerTeamId: row?.tossWinnerTeamId ?? row?.toss_winner_team_id ?? null,
+  tossWinnerTeamName: row?.tossWinnerTeamName ?? row?.toss_winner_team_name ?? null,
+  tossDecision: row?.tossDecision ?? row?.toss_decision ?? null,
+  battingTeamId: row?.battingTeamId ?? row?.batting_team_id ?? null,
+  battingTeamName: row?.battingTeamName ?? row?.batting_team_name ?? null,
+  fieldingTeamId: row?.fieldingTeamId ?? row?.fielding_team_id ?? null,
+  fieldingTeamName: row?.fieldingTeamName ?? row?.fielding_team_name ?? null,
+});
+
+const getTeamDisplayName = (name: string | null | undefined, id: number | null | undefined) => {
+  const trimmed = String(name || '').trim();
+  if (trimmed) return trimmed;
+  if (id) return `Team ${id}`;
+  return 'TBD';
+};
+
 export default function TournamentDetailsScreen() {
 
   const auth = useAuth();
@@ -353,7 +387,7 @@ export default function TournamentDetailsScreen() {
     try {
       const response = await fetchTournamentMatches(tournamentId);
       const rows = Array.isArray(response?.matches) ? response.matches : [];
-      setMatches(rows);
+      setMatches(rows.map(toMatchModel));
     } catch {
       setMatches([]);
     } finally {
@@ -1185,14 +1219,18 @@ export default function TournamentDetailsScreen() {
                           disabled={tossSubmitting}
                           onPress={() => saveTossTeams(Number(tossModalMatch.homeTeamId), Number(tossModalMatch.awayTeamId))}
                         >
-                          <Text style={styles.tossDecisionText}>{tossModalMatch.homeTeamName} Batting</Text>
+                          <Text style={styles.tossDecisionText}>
+                            {getTeamDisplayName(tossModalMatch.homeTeamName, tossModalMatch.homeTeamId)} Batting
+                          </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={[styles.tossDecisionButton, styles.tossDecisionButtonSecondary, tossSubmitting && styles.disabledButton]}
                           disabled={tossSubmitting}
                           onPress={() => saveTossTeams(Number(tossModalMatch.awayTeamId), Number(tossModalMatch.homeTeamId))}
                         >
-                          <Text style={styles.tossDecisionText}>{tossModalMatch.awayTeamName} Batting</Text>
+                          <Text style={styles.tossDecisionText}>
+                            {getTeamDisplayName(tossModalMatch.awayTeamName, tossModalMatch.awayTeamId)} Batting
+                          </Text>
                         </TouchableOpacity>
                       </View>
                     </View>
