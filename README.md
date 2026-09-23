@@ -55,3 +55,21 @@ Join our community of developers creating universal apps.
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
 # tournament-hub-fe
+
+## WhatsApp OTP signup
+
+Signup sends a six-digit OTP through the Meta WhatsApp Cloud API. Configure these
+variables in the backend environment before using the signup flow:
+
+```env
+WHATSAPP_ACCESS_TOKEN=your_meta_access_token
+WHATSAPP_PHONE_NUMBER_ID=your_whatsapp_phone_number_id
+WHATSAPP_OTP_TEMPLATE_NAME=your_approved_otp_template_name
+WHATSAPP_OTP_TEMPLATE_LANGUAGE=en_US
+WHATSAPP_GRAPH_API_VERSION=v23.0
+```
+
+The WhatsApp template must be approved by Meta and contain one body text
+placeholder for the OTP, such as `{{1}}`. The backend accepts Indian 10-digit
+numbers, sends them as `+91XXXXXXXXXX`, and creates the user only after OTP
+verification and MPIN completion.

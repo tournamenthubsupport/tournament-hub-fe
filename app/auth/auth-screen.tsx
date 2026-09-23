@@ -8,7 +8,7 @@ import {
     TouchableOpacity, View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { authenticateUser, createUser } from '../service/authService';
+import { authenticateUser, completeSignup, requestSignupOtp, verifySignupOtp } from '../service/authService';
 import { useAuth } from './auth-context';
 
 const AuthScreen = () => {
@@ -16,7 +16,11 @@ const AuthScreen = () => {
   const [formData, setFormData] = useState({ name: '', phone: '', mpin: '', confirmMpin: '', role: '' as '' | 'organizer' | 'player' });
   const [loading, setLoading] = useState(false);
   const [isSignUpMode, setIsSignUpMode] = useState(false);
-  const [errors, setErrors] = useState({ name: '', phone: '', mpin: '', confirmMpin: '', role: '', general: '' });
+  const [signupStep, setSignupStep] = useState<'profile' | 'otp' | 'mpin'>('profile');
+  const [otp, setOtp] = useState('');
+  const [verificationToken, setVerificationToken] = useState('');
+  const [resendCountdown, setResendCountdown] = useState(0);
+  const [errors, setErrors] = useState({ name: '', phone: '', mpin: '', confirmMpin: '', role: '', otp: '', general: '' });
   const [message, setMessage] = useState('');
   const { setUser } = useAuth() || { setUser: () => {} } as any;
   const mpinInputRef = useRef<TextInput | null>(null);
@@ -47,6 +51,14 @@ const AuthScreen = () => {
   const normalizePhone = (value: string) => value.replace(/\D/g, '');
   const normalizePhoneInput = (value: string) => normalizePhone(value).slice(0, 10);
   const normalizeMpin = (value: string) => value.replace(/\D/g, '').slice(0, 6);
+
+  useEffect(() => {
+    if (resendCountdown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCountdown((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCountdown]);
 
   const getStoredAuthToken = async () => {
     try {
@@ -88,7 +100,7 @@ const AuthScreen = () => {
   };
 
   const validateForm = () => {
-    const newErrors = { name: '', phone: '', mpin: '', confirmMpin: '', role: '', general: '' };
+    const newErrors = { name: '', phone: '', mpin: '', confirmMpin: '', role: '', otp: '', general: '' };
     let isValid = true;
     if (isSignUpMode && !formData.name.trim()) {
       newErrors.name = 'Name is required';
@@ -106,37 +118,72 @@ const AuthScreen = () => {
       newErrors.phone = 'Please enter a valid 10-digit phone number';
       isValid = false;
     }
-    if (formData.mpin.length !== 6) {
+    if (!isSignUpMode && formData.mpin.length !== 6) {
       newErrors.mpin = 'MPIN must be exactly 6 digits';
-      isValid = false;
-    }
-    if (isSignUpMode && formData.mpin !== formData.confirmMpin) {
-      newErrors.confirmMpin = 'MPINs do not match';
       isValid = false;
     }
     setErrors(newErrors);
     return isValid;
   };
 
+  const validateMpinForm = () => {
+    const newErrors = { name: '', phone: '', mpin: '', confirmMpin: '', role: '', otp: '', general: '' };
+    if (formData.mpin.length !== 6) {
+      newErrors.mpin = 'MPIN must be exactly 6 digits';
+    }
+    if (formData.mpin !== formData.confirmMpin) {
+      newErrors.confirmMpin = 'MPINs do not match';
+    }
+    setErrors(newErrors);
+    return !newErrors.mpin && !newErrors.confirmMpin;
+  };
+
   const handleSignup = async () => {
-    setErrors({ name: '', phone: '', mpin: '', confirmMpin: '', role: '', general: '' });
+    setErrors({ name: '', phone: '', mpin: '', confirmMpin: '', role: '', otp: '', general: '' });
     setMessage('');
-    if (!validateForm()) return;
+    if (signupStep === 'profile' && !validateForm()) return;
+    if (signupStep === 'otp' && !/^\d{6}$/.test(otp)) {
+      setErrors((prev) => ({ ...prev, otp: 'Enter the 6-digit OTP sent to WhatsApp.' }));
+      return;
+    }
+    if (signupStep === 'mpin' && !validateMpinForm()) return;
     setLoading(true);
     try {
       const phone = normalizePhoneInput(formData.phone);
-      const res = await createUser(
-        formData.name.trim(),
-        phone,
-        formData.mpin.trim(),
-        formData.role as 'organizer' | 'player'
-      );
+      let res;
+      if (signupStep === 'profile') {
+        res = await requestSignupOtp(phone);
+        if (!(res as any).error) {
+          setSignupStep('otp');
+          setResendCountdown(Number((res as any).resendAfterSeconds || 60));
+          setMessage('OTP sent to your WhatsApp number.');
+        }
+      } else if (signupStep === 'otp') {
+        res = await verifySignupOtp(phone, otp);
+        if (!(res as any).error) {
+          setVerificationToken((res as any).verificationToken || '');
+          setSignupStep('mpin');
+          setMessage('Phone verified. Create your 6-digit MPIN.');
+        }
+      } else {
+        res = await completeSignup(
+          formData.name.trim(),
+          phone,
+          formData.mpin.trim(),
+          formData.role as 'organizer' | 'player',
+          verificationToken,
+        );
+      }
       if ((res as any).error) {
         setErrors((prev) => ({ ...prev, general: (res as any).error }));
         return;
       }
+      if (signupStep !== 'mpin') return;
       setMessage('Signup successful! Please sign in.');
       setIsSignUpMode(false);
+      setSignupStep('profile');
+      setOtp('');
+      setVerificationToken('');
       setFormData({ name: '', phone, mpin: '', confirmMpin: '', role: '' });
     } catch (err: any) {
       setErrors((prev) => ({ ...prev, general: err?.message || 'Signup failed.' }));
@@ -146,7 +193,7 @@ const AuthScreen = () => {
   };
 
   const handleSignin = async () => {
-    setErrors({ name: '', phone: '', mpin: '', confirmMpin: '', role: '', general: '' });
+    setErrors({ name: '', phone: '', mpin: '', confirmMpin: '', role: '', otp: '', general: '' });
     setMessage('');
     const phone = normalizePhoneInput(formData.phone);
     const basicValid =
@@ -328,7 +375,49 @@ const AuthScreen = () => {
               </View>
               {errors.phone ? <Text style={styles.errorText}>{errors.phone}</Text> : null}
             </View>
-            <View style={styles.inputGroup}>
+            {isSignUpMode && signupStep === 'otp' && (
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>WhatsApp OTP</Text>
+                <View style={[styles.inputContainer, errors.otp && styles.inputError]}>
+                  <Shield size={20} color="#09b036" />
+                  <TextInput
+                    style={styles.textInput}
+                    value={otp}
+                    onChangeText={(value) => {
+                      setOtp(normalizeMpin(value));
+                      setErrors((prev) => ({ ...prev, otp: '', general: '' }));
+                    }}
+                    placeholder="Enter 6-digit OTP"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="number-pad"
+                    maxLength={6}
+                  />
+                </View>
+                {errors.otp ? <Text style={styles.errorText}>{errors.otp}</Text> : null}
+                <TouchableOpacity
+                  onPress={async () => {
+                    if (resendCountdown > 0 || loading) return;
+                    setLoading(true);
+                    setErrors((prev) => ({ ...prev, general: '', otp: '' }));
+                    const res = await requestSignupOtp(normalizePhoneInput(formData.phone));
+                    if ((res as any).error) {
+                      setErrors((prev) => ({ ...prev, general: (res as any).error }));
+                    } else {
+                      setResendCountdown(Number((res as any).resendAfterSeconds || 60));
+                      setMessage('A new OTP was sent to your WhatsApp number.');
+                    }
+                    setLoading(false);
+                  }}
+                  disabled={loading || resendCountdown > 0}
+                  style={styles.resendButton}
+                >
+                  <Text style={styles.resendText}>
+                    {resendCountdown > 0 ? `Resend OTP in ${resendCountdown}s` : 'Resend OTP'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {(!isSignUpMode || signupStep === 'mpin') && <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>MPIN</Text>
               <View style={[styles.pinInputWrapper, errors.mpin && styles.pinInputWrapperError]}>
                 {Array.from({ length: 6 }).map((_, index) => {
@@ -361,8 +450,8 @@ const AuthScreen = () => {
                 />
               </View>
               {errors.mpin ? <Text style={styles.errorText}>{errors.mpin}</Text> : null}
-            </View>
-            {isSignUpMode && (
+            </View>}
+            {isSignUpMode && signupStep === 'mpin' && (
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Confirm MPIN</Text>
                 <View style={[styles.pinInputWrapper, errors.confirmMpin && styles.pinInputWrapperError]}>
@@ -409,7 +498,11 @@ const AuthScreen = () => {
                 {loading
                   ? 'Please wait...'
                   : isSignUpMode
-                  ? 'Sign Up'
+                  ? signupStep === 'profile'
+                    ? 'Send WhatsApp OTP'
+                    : signupStep === 'otp'
+                    ? 'Verify OTP'
+                    : 'Create Account'
                   : 'Sign In'}
               </Text>
             </TouchableOpacity>
@@ -418,7 +511,14 @@ const AuthScreen = () => {
             <Text style={styles.footerText}>
               {isSignUpMode ? 'Already have an account? ' : "Don't have an account? "}
             </Text>
-            <TouchableOpacity onPress={() => setIsSignUpMode((prev) => !prev)}>
+            <TouchableOpacity onPress={() => {
+              setIsSignUpMode((prev) => !prev);
+              setSignupStep('profile');
+              setOtp('');
+              setVerificationToken('');
+              setResendCountdown(0);
+              setErrors({ name: '', phone: '', mpin: '', confirmMpin: '', role: '', otp: '', general: '' });
+            }}>
               <Text style={styles.loginLink}>
                 {isSignUpMode ? 'Sign In' : 'Sign Up'}
               </Text>
@@ -556,6 +656,8 @@ const styles = StyleSheet.create({
   footerText: { fontSize: 16, fontFamily: 'Inter-Regular', color: '#6B7280' },
   loginLink: { fontSize: 16, fontFamily: 'Inter-SemiBold', color: '#22C55E' },
   message: { fontSize: 14, fontFamily: 'Inter-Regular', color: '#22C55E', marginTop: 4 },
+  resendButton: { alignSelf: 'flex-start', marginTop: 10 },
+  resendText: { fontSize: 14, fontFamily: 'Inter-SemiBold', color: '#16A34A' },
   logoClean: { backgroundColor: 'transparent', width: 280, height: 200 , position: 'relative' }
 });
 

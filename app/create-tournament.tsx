@@ -151,6 +151,8 @@ const CreateTournament = () => {
     return `${year}-${month}-${day}`;
   };
 
+  const formatDateForApi = (date: Date) => formatDateForInput(date);
+
   const parseInputDate = (value: string): Date | null => {
     const trimmed = value.trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
@@ -193,8 +195,8 @@ const CreateTournament = () => {
       teams: totalTeams,
       entry_fees: entryFees,
       prize: prize,
-      start_date: startDate.toISOString(),
-      end_date: endDate.toISOString(),
+      start_date: formatDateForApi(startDate),
+      end_date: formatDateForApi(endDate),
       ball_type: ballType,
       match_type: matchType,
       tournament_type: tournamentType,

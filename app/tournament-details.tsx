@@ -118,24 +118,16 @@ const toMatchModel = (row: any): TournamentMatch => ({
   fieldingTeamName: row?.fieldingTeamName ?? row?.fielding_team_name ?? null,
 });
 
-const getTeamDisplayName = (name: string | null | undefined, id: number | null | undefined) => {
-  const trimmed = String(name || '').trim();
-  if (trimmed) return trimmed;
-  if (id) return `Team ${id}`;
-  return 'TBD';
-};
-
 export default function TournamentDetailsScreen() {
 
   const auth = useAuth();
 
   if (!auth) {
     console.error('Auth context is not available');
-    <Text>Loading auth context...</Text>;
-    return false;
+    return null;
   }
 
-  const { user } = auth;
+  const { user, authHydrated } = auth;
   const currentUserMobile = user?.phone?.toString() || '';
   const userRole = (user?.role || 'player').toLowerCase();
   const isAdmin = userRole === 'admin';
@@ -144,6 +136,7 @@ export default function TournamentDetailsScreen() {
   const isGuestUser = !user?.id;
   const params = useLocalSearchParams();
   const router = useRouter();
+  const tournamentIdParam = Array.isArray(params.id) ? params.id[0] : params.id;
   const [tournament, setTournament] = useState<{
     id: number;
     name: string;
@@ -190,6 +183,7 @@ export default function TournamentDetailsScreen() {
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [resetMatchesLoading, setResetMatchesLoading] = useState(false);
   const [showTournamentDetails, setShowTournamentDetails] = useState(true);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [winnerPickerMatch, setWinnerPickerMatch] = useState<TournamentMatch | null>(null);
   const [winnerSubmitting, setWinnerSubmitting] = useState(false);
   const [tossModalMatch, setTossModalMatch] = useState<TournamentMatch | null>(null);
@@ -220,6 +214,12 @@ export default function TournamentDetailsScreen() {
     const year = parsed.getFullYear();
     const month = String(parsed.getMonth() + 1).padStart(2, '0');
     const day = String(parsed.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const formatDateForApi = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   };
   const parseInputDate = (value: string): Date | null => {
@@ -276,6 +276,48 @@ export default function TournamentDetailsScreen() {
     : 'Runner Up';
   const showTopDetails = !hasScheduledMatches || showTournamentDetails;
 
+  const resolveTeamDisplayName = useCallback((name: string | null | undefined, id: number | null | undefined) => {
+    const trimmed = String(name || '').trim();
+    if (trimmed) return trimmed;
+
+    const numericId = Number(id || 0);
+    if (numericId > 0) {
+      const joinedTeamName = joinedTeams.find((team) => Number(team.id) === numericId)?.name;
+      const joinedTrimmed = String(joinedTeamName || '').trim();
+      if (joinedTrimmed) return joinedTrimmed;
+      return `Team ${numericId}`;
+    }
+
+    return 'TBD';
+  }, [joinedTeams]);
+
+  const formatTeamLabel = useCallback((name: string | null | undefined, id: number | null | undefined) => {
+    const resolved = resolveTeamDisplayName(name, id);
+    const cleaned = String(resolved || '').replace(/\s+/g, ' ').trim();
+    if (cleaned) return cleaned;
+
+    const numericId = Number(id || 0);
+    if (numericId > 0) return `Team ${numericId}`;
+    return 'TBD';
+  }, [resolveTeamDisplayName]);
+
+  const logTossDebug = useCallback((label: string, payload: Record<string, any>) => {
+    if (__DEV__) {
+      console.log(`[toss-debug] ${label}`, payload);
+    }
+  }, []);
+
+  const getTournamentShareLink = useCallback((tournamentId?: number | string) => {
+    const resolvedId = String(tournamentId || tournament?.id || '').trim();
+    if (!resolvedId) return '';
+
+    return Linking.createURL('/tournament-details', {
+      queryParams: { id: resolvedId },
+    });
+  }, [tournament?.id]);
+
+  const tournamentShareLink = getTournamentShareLink();
+
   useEffect(() => {
     if (hasScheduledMatches) {
       setShowTournamentDetails(false);
@@ -285,9 +327,80 @@ export default function TournamentDetailsScreen() {
   }, [hasScheduledMatches]);
 
   useEffect(() => {
-    setCityList(getCityItemsForState(selectedState));
-    setSelectedCity('');
+    if (!authHydrated) {
+      return;
+    }
+
+    if (!user?.id) {
+      const returnId = String(tournamentIdParam || '').trim();
+      router.replace({
+        pathname: '/auth/auth-screen',
+        params: returnId
+          ? { returnTo: '/tournament-details', returnId }
+          : { returnTo: '/tournament-details' },
+      });
+    }
+  }, [authHydrated, router, tournamentIdParam, user?.id]);
+
+  useEffect(() => {
+    const nextCityItems = getCityItemsForState(selectedState);
+    setCityList(nextCityItems);
+    setSelectedCity((prev) => (nextCityItems.some((city) => city.value === prev) ? prev : ''));
   }, [selectedState]);
+
+  const handleEditStateChange = useCallback((nextValue: string | null) => {
+    const nextState = String(nextValue || '').trim();
+    setIsLocationChanged(true);
+    setSelectedState(nextState);
+    setSelectedCity('');
+    setEditTournament((prev: any) => (prev ? { ...prev, state: nextState, city: '' } : prev));
+  }, []);
+
+  const handleEditCityChange = useCallback((nextValue: string | null) => {
+    const nextCity = String(nextValue || '').trim();
+    setIsLocationChanged(true);
+    setSelectedCity(nextCity);
+    setEditTournament((prev: any) => (prev ? { ...prev, city: nextCity } : prev));
+  }, []);
+
+  const handleSaveTournamentEdits = async () => {
+    try {
+      if (!editTournament?.id) {
+        Alert.alert('Error', 'Unable to update tournament right now.');
+        return;
+      }
+
+      const resolvedState = String(selectedState || editTournament?.state || tournament?.state || '').trim();
+      const resolvedCity = String(selectedCity || editTournament?.city || tournament?.city || '').trim();
+
+      if (!resolvedState) {
+        Alert.alert('Validation', 'Please choose a state before saving.');
+        return;
+      }
+
+      if (!resolvedCity) {
+        Alert.alert('Validation', 'Please choose a city before saving.');
+        return;
+      }
+
+      const payload = {
+        ...editTournament,
+        state: resolvedState,
+        city: resolvedCity,
+      };
+
+      await updateTournament(payload.id, payload);
+      setTournament(payload);
+      setSelectedState(resolvedState);
+      setSelectedCity(resolvedCity);
+      setIsEditing(false);
+      setIsLocationChanged(false);
+      Alert.alert('Success', 'Tournament details updated!');
+    } catch (err) {
+      const errorMessage = typeof err === 'object' && err !== null && 'message' in err ? (err as { message?: string }).message : 'Failed to update tournament';
+      Alert.alert('Error', errorMessage || 'Failed to update tournament');
+    }
+  };
 
   const getTournamentTypeIcon = (type: string) => {
     const value = (type || '').toLowerCase();
@@ -312,10 +425,18 @@ export default function TournamentDetailsScreen() {
 
   useEffect(() => {
     const loadTournaments = async () => {
+      if (!authHydrated || !user?.id) {
+        return;
+      }
+
+      if (!tournamentIdParam) {
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       try {
-        const id = Array.isArray(params.id) ? params.id[0] : params.id;
-        const data = await fetchTournamentsById(parseInt(id, 10));
+        const data = await fetchTournamentsById(parseInt(tournamentIdParam, 10));
         setTournament(data.tournament || {});
 
         const sportId = Number((data.tournament || {}).sport_id);
@@ -337,7 +458,7 @@ export default function TournamentDetailsScreen() {
       }
     };
     loadTournaments();
-  }, []);
+  }, [authHydrated, tournamentIdParam, user?.id]);
 
   const fetchJoinedTeams = async () => {
     if (tournament?.id) {
@@ -387,7 +508,23 @@ export default function TournamentDetailsScreen() {
     try {
       const response = await fetchTournamentMatches(tournamentId);
       const rows = Array.isArray(response?.matches) ? response.matches : [];
-      setMatches(rows.map(toMatchModel));
+      const normalizedMatches = rows.map(toMatchModel);
+      setMatches(normalizedMatches);
+
+      if (__DEV__) {
+        logTossDebug('loadMatches-normalized', {
+          tournamentId,
+          count: normalizedMatches.length,
+          sample: normalizedMatches.slice(0, 3).map((match: TournamentMatch) => ({
+            id: match.id,
+            homeTeamId: match.homeTeamId,
+            homeTeamName: match.homeTeamName,
+            awayTeamId: match.awayTeamId,
+            awayTeamName: match.awayTeamName,
+            status: match.status,
+          })),
+        });
+      }
     } catch {
       setMatches([]);
     } finally {
@@ -449,7 +586,30 @@ export default function TournamentDetailsScreen() {
   };
 
   const openStartMatchModal = (match: TournamentMatch) => {
-    setTossModalMatch(match);
+    const resolvedHomeTeamName = formatTeamLabel(match.homeTeamName, match.homeTeamId);
+    const resolvedAwayTeamName = formatTeamLabel(match.awayTeamName, match.awayTeamId);
+
+    if (__DEV__) {
+      logTossDebug('openStartMatchModal', {
+        matchId: match.id,
+        source: {
+          homeTeamId: match.homeTeamId,
+          homeTeamName: match.homeTeamName,
+          awayTeamId: match.awayTeamId,
+          awayTeamName: match.awayTeamName,
+        },
+        resolved: {
+          homeTeamName: resolvedHomeTeamName,
+          awayTeamName: resolvedAwayTeamName,
+        },
+      });
+    }
+
+    setTossModalMatch({
+      ...match,
+      homeTeamName: resolvedHomeTeamName,
+      awayTeamName: resolvedAwayTeamName,
+    });
     setTossSpinDone(!!match.battingTeamId && !!match.fieldingTeamId);
     setTossFaceResult('tail');
   };
@@ -658,7 +818,13 @@ export default function TournamentDetailsScreen() {
 
   const handleShare = () => {
     if (isGuestUser) {
-      router.push({ pathname: '/auth/auth-screen', params: { returnTo: '/tournament-details', returnId: String(tournament?.id || '') } });
+      const returnId = String(tournament?.id || tournamentIdParam || '').trim();
+      router.replace({
+        pathname: '/auth/auth-screen',
+        params: returnId
+          ? { returnTo: '/tournament-details', returnId }
+          : { returnTo: '/tournament-details' },
+      });
       return;
     }
 
@@ -666,20 +832,35 @@ export default function TournamentDetailsScreen() {
       Alert.alert('Tournament data is not available.');
       return;
     }
-  
+
+    setShowShareModal(true);
+  };
+
+  const shareTournamentDetails = async () => {
+    if (!tournament || !tournamentShareLink) {
+      Alert.alert('Tournament data is not available.');
+      return;
+    }
+
     const message = `Message from Tournament Hub\n\n` +
-    `🏆 ${tournament.name}\n` +
-    `📍 ${tournament.location} - ${tournament.ground}\n` +
-    `🗺️ ${tournament.state || 'State'} / ${tournament.city || 'City'}\n` +
-    `📅 ${renderDateRange(tournament.start_date, tournament.end_date)}\n` +
-    `🎯 Match Type: ${tournament.match_type}\n` +
-    `🎾 Ball Type: ${tournament.ball_type}\n` +
-    `📱 Organiser: ${tournament.organiser_name} (${tournament.organiser_contact})`;
-  
-    Share.share({
-      message,
-      title: `Tournament: ${tournament.name}`,
-    });
+      `🏆 ${tournament.name}\n` +
+      `📍 ${tournament.location} - ${tournament.ground}\n` +
+      `🗺️ ${tournament.state || 'State'} / ${tournament.city || 'City'}\n` +
+      `📅 ${renderDateRange(tournament.start_date, tournament.end_date)}\n` +
+      `🎯 Match Type: ${tournament.match_type}\n` +
+      `🎾 Ball Type: ${tournament.ball_type}\n` +
+      `📱 Organiser: ${tournament.organiser_name} (${tournament.organiser_contact})\n\n` +
+      `Open tournament details: ${tournamentShareLink}`;
+
+    try {
+      await Share.share({
+        message,
+        title: `Tournament: ${tournament.name}`,
+        url: tournamentShareLink,
+      });
+    } catch {
+      Alert.alert('Share unavailable', 'Unable to open the share sheet right now.');
+    }
   };
 
   const formatDate = (dateStr: string) => {
@@ -816,6 +997,17 @@ export default function TournamentDetailsScreen() {
       console.error('Reject team error:', error);
     }
   };
+
+  if (!authHydrated) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.loadingScreen}>
+          <ActivityIndicator size="large" color="#2563EB" />
+          <Text style={styles.loadingScreenText}>Checking login...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -1174,6 +1366,24 @@ export default function TournamentDetailsScreen() {
                   <Text style={styles.modalTitle}>Match Toss</Text>
                   <Text style={styles.winnerPickerSubtitle}>{tossModalMatch?.round || 'Match'}</Text>
 
+                  {__DEV__ && tossModalMatch && (
+                    <View style={styles.tossDebugBox}>
+                      <Text style={styles.tossDebugTitle}>Debug (mobile)</Text>
+                      <Text style={styles.tossDebugText}>
+                        Home src: id={String(tossModalMatch.homeTeamId)} name="{String(tossModalMatch.homeTeamName || '')}"
+                      </Text>
+                      <Text style={styles.tossDebugText}>
+                        Away src: id={String(tossModalMatch.awayTeamId)} name="{String(tossModalMatch.awayTeamName || '')}"
+                      </Text>
+                      <Text style={styles.tossDebugText}>
+                        Home resolved: {formatTeamLabel(tossModalMatch.homeTeamName, tossModalMatch.homeTeamId)}
+                      </Text>
+                      <Text style={styles.tossDebugText}>
+                        Away resolved: {formatTeamLabel(tossModalMatch.awayTeamName, tossModalMatch.awayTeamId)}
+                      </Text>
+                    </View>
+                  )}
+
                   <View style={styles.coinStage}>
                     <Animated.View
                       style={[
@@ -1220,7 +1430,7 @@ export default function TournamentDetailsScreen() {
                           onPress={() => saveTossTeams(Number(tossModalMatch.homeTeamId), Number(tossModalMatch.awayTeamId))}
                         >
                           <Text style={styles.tossDecisionText}>
-                            {getTeamDisplayName(tossModalMatch.homeTeamName, tossModalMatch.homeTeamId)} Batting
+                            {formatTeamLabel(tossModalMatch.homeTeamName, tossModalMatch.homeTeamId)} Batting
                           </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
@@ -1229,7 +1439,7 @@ export default function TournamentDetailsScreen() {
                           onPress={() => saveTossTeams(Number(tossModalMatch.awayTeamId), Number(tossModalMatch.homeTeamId))}
                         >
                           <Text style={styles.tossDecisionText}>
-                            {getTeamDisplayName(tossModalMatch.awayTeamName, tossModalMatch.awayTeamId)} Batting
+                            {formatTeamLabel(tossModalMatch.awayTeamName, tossModalMatch.awayTeamId)} Batting
                           </Text>
                         </TouchableOpacity>
                       </View>
@@ -1456,6 +1666,41 @@ export default function TournamentDetailsScreen() {
   </View>
 </Modal>
 
+            <Modal visible={showShareModal} animationType="fade" transparent onRequestClose={() => setShowShareModal(false)}>
+              <View style={styles.modalContainer}>
+                <View style={styles.modalContent}>
+                  <TouchableOpacity style={styles.closeButton} onPress={() => setShowShareModal(false)}>
+                    <Text style={styles.closeButtonText}>✕</Text>
+                  </TouchableOpacity>
+
+                  <Text style={styles.modalTitle}>Share Tournament</Text>
+                  <Text style={styles.editModalSubtitle}>Send the link through WhatsApp, Telegram, or scan the QR code to open this tournament directly.</Text>
+
+                  <View style={styles.sharePreviewCard}>
+                    <Text style={styles.sharePreviewLabel}>{tournament?.name || 'Tournament details'}</Text>
+                    <Text style={styles.sharePreviewSubText}>{tournament ? renderDateRange(tournament.start_date, tournament.end_date) : ''}</Text>
+                    <Text style={styles.sharePreviewLink} numberOfLines={2}>{tournamentShareLink}</Text>
+                    {tournamentShareLink ? (
+                      <Image
+                        source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(tournamentShareLink)}` }}
+                        style={styles.shareQrImage}
+                        resizeMode="contain"
+                      />
+                    ) : null}
+                  </View>
+
+                  <View style={styles.shareModalActions}>
+                    <TouchableOpacity style={styles.shareActionButton} onPress={shareTournamentDetails}>
+                      <Text style={styles.shareActionText}>Share Link</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.shareActionButton, styles.shareActionButtonSecondary]} onPress={() => setShowShareModal(false)}>
+                      <Text style={[styles.shareActionText, styles.shareActionTextSecondary]}>Close</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            </Modal>
+
             {isEditing && (
               <Modal visible={isEditing} animationType="slide" transparent>
                 <View style={styles.modalContainer}>
@@ -1466,6 +1711,8 @@ export default function TournamentDetailsScreen() {
                     <Text style={styles.editModalTitle}>Edit Tournament</Text>
                     <Text style={styles.editModalSubtitle}>Update your tournament details and save changes.</Text>
                     <ScrollView contentContainerStyle={styles.editFormContent}>
+                      <View style={styles.editSectionCard}>
+                        <Text style={styles.editSectionTitle}>Basic Details</Text>
                       <Text style={styles.editFieldLabel}>Tournament Name</Text>
                       <TextInput
                         style={styles.editInput}
@@ -1487,17 +1734,18 @@ export default function TournamentDetailsScreen() {
                         onChangeText={ground => setEditTournament({ ...editTournament, ground })}
                         placeholder="Ground"
                       />
+                      </View>
+
+                      <View style={styles.editSectionCard}>
+                      <Text style={styles.editSectionTitle}>Location</Text>
                       <Text style={styles.editFieldLabel}>State / Union Territory</Text>
                       <DropDownPicker
         open={openState}
-        value={selectedState ? selectedState : (tournament?.state || '')}
+        value={selectedState || editTournament?.state || tournament?.state || null}
         items={stateList}
         setOpen={setOpenState}
-        setValue={val => {
-          setIsLocationChanged(true)
-          setSelectedState(val);
-          setEditTournament({ ...editTournament, state: val, city: '' });
-        }}
+        setValue={setSelectedState}
+        onChangeValue={(value) => handleEditStateChange(value as string | null)}
         setItems={setStateList}
         placeholder="Select a State / UT"
         listMode="MODAL"
@@ -1518,14 +1766,11 @@ export default function TournamentDetailsScreen() {
                       <Text style={styles.editFieldLabel}>City</Text>
                       <DropDownPicker
         open={openCity}
-        value={selectedCity ? selectedCity : (tournament?.city || '')}
+        value={selectedCity || editTournament?.city || tournament?.city || null}
         items={cityList}
         setOpen={setOpenCity}
-        setValue={val => {
-          setIsLocationChanged(true)
-          setSelectedCity(val);
-          setEditTournament({ ...editTournament, city: val });
-        }}
+        setValue={setSelectedCity}
+        onChangeValue={(value) => handleEditCityChange(value as string | null)}
         setItems={setCityList}
         placeholder={selectedState ? 'Select a City' : 'Select a State first'}
         listMode="MODAL"
@@ -1544,6 +1789,10 @@ export default function TournamentDetailsScreen() {
         modalContentContainerStyle={styles.dropdownModalContent}
         dropDownContainerStyle={styles.dropdownMenu}
 />
+                      </View>
+
+                      <View style={styles.editSectionCard}>
+                      <Text style={styles.editSectionTitle}>Fees and Format</Text>
                       <Text style={styles.editFieldLabel}>Prize</Text>
                       <TextInput
                         style={styles.editInput}
@@ -1560,7 +1809,7 @@ export default function TournamentDetailsScreen() {
                         keyboardType="numeric"
                       />
                       <Text style={styles.editFieldLabel}>Tournament Type</Text>
-                      <View style={styles.optionsContainer}>
+                      <View style={styles.editOptionsContainer}>
                         {['Turf', 'Open Ground'].map((type) => (
                           <TouchableOpacity
                             key={type}
@@ -1572,7 +1821,7 @@ export default function TournamentDetailsScreen() {
                         ))}
                       </View>
                       <Text style={styles.editFieldLabel}>Match Type</Text>
-                      <View style={styles.optionsContainer}>
+                      <View style={styles.editOptionsContainer}>
                         {['Limited Overs', 'One Day', 'Test Match'].map((type) => (
                           <TouchableOpacity
                             key={type}
@@ -1584,7 +1833,7 @@ export default function TournamentDetailsScreen() {
                         ))}
                       </View>
                       <Text style={styles.editFieldLabel}>Ball Type</Text>
-                      <View style={styles.optionsContainer}>
+                      <View style={styles.editOptionsContainer}>
                         {['Tennis', 'Rubber', 'Leather'].map((type) => (
                           <TouchableOpacity
                             key={type}
@@ -1595,6 +1844,10 @@ export default function TournamentDetailsScreen() {
                           </TouchableOpacity>
                         ))}
                       </View>
+                      </View>
+
+                      <View style={styles.editSectionCard}>
+                      <Text style={styles.editSectionTitle}>Schedule</Text>
                       <Text style={styles.editFieldLabel}>Start Date</Text>
                       {Platform.OS === 'web' ? (
                         <input
@@ -1608,13 +1861,13 @@ export default function TournamentDetailsScreen() {
                             if (currentEnd && parsed.getTime() > currentEnd.getTime()) {
                               setEditTournament({
                                 ...editTournament,
-                                start_date: parsed.toISOString(),
-                                end_date: parsed.toISOString(),
+                                start_date: formatDateForApi(parsed),
+                                end_date: formatDateForApi(parsed),
                               });
                               return;
                             }
 
-                            setEditTournament({ ...editTournament, start_date: parsed.toISOString() });
+                            setEditTournament({ ...editTournament, start_date: formatDateForApi(parsed) });
                           }}
                           style={{
                             width: '100%',
@@ -1631,7 +1884,7 @@ export default function TournamentDetailsScreen() {
                         />
                       ) : (
                         <>
-                          <TouchableOpacity onPress={() => setEditTournament({ ...editTournament, showStartPicker: true })} style={styles.dateButton}>
+                          <TouchableOpacity onPress={() => setEditTournament({ ...editTournament, showStartPicker: true })} style={styles.editDateButton}>
                             <Calendar size={16} color="#555" />
                             <Text style={styles.dateText}>{editTournament?.start_date ? new Date(editTournament.start_date).toDateString() : 'Select Start Date'}</Text>
                           </TouchableOpacity>
@@ -1642,7 +1895,7 @@ export default function TournamentDetailsScreen() {
                               display="default"
                               onChange={(event, selectedDate) => {
                                 setEditTournament({ ...editTournament, showStartPicker: false });
-                                if (selectedDate) setEditTournament({ ...editTournament, start_date: selectedDate.toISOString() });
+                                if (selectedDate) setEditTournament({ ...editTournament, start_date: formatDateForApi(selectedDate) });
                               }}
                             />
                           )}
@@ -1660,11 +1913,11 @@ export default function TournamentDetailsScreen() {
 
                             const currentStart = editTournament?.start_date ? new Date(editTournament.start_date) : null;
                             if (currentStart && parsed.getTime() < currentStart.getTime()) {
-                              setEditTournament({ ...editTournament, end_date: currentStart.toISOString() });
+                              setEditTournament({ ...editTournament, end_date: formatDateForApi(currentStart) });
                               return;
                             }
 
-                            setEditTournament({ ...editTournament, end_date: parsed.toISOString() });
+                            setEditTournament({ ...editTournament, end_date: formatDateForApi(parsed) });
                           }}
                           style={{
                             width: '100%',
@@ -1681,7 +1934,7 @@ export default function TournamentDetailsScreen() {
                         />
                       ) : (
                         <>
-                          <TouchableOpacity onPress={() => setEditTournament({ ...editTournament, showEndPicker: true })} style={styles.dateButton}>
+                          <TouchableOpacity onPress={() => setEditTournament({ ...editTournament, showEndPicker: true })} style={styles.editDateButton}>
                             <Calendar size={16} color="#555" />
                             <Text style={styles.dateText}>{editTournament?.end_date ? new Date(editTournament.end_date).toDateString() : 'Select End Date'}</Text>
                           </TouchableOpacity>
@@ -1692,12 +1945,13 @@ export default function TournamentDetailsScreen() {
                               display="default"
                               onChange={(event, selectedDate) => {
                                 setEditTournament({ ...editTournament, showEndPicker: false });
-                                if (selectedDate) setEditTournament({ ...editTournament, end_date: selectedDate.toISOString() });
+                                if (selectedDate) setEditTournament({ ...editTournament, end_date: formatDateForApi(selectedDate) });
                               }}
                             />
                           )}
                         </>
                       )}
+                      </View>
                     </ScrollView>
                     <View style={styles.editActionsRow}>
                       <TouchableOpacity
@@ -1708,23 +1962,7 @@ export default function TournamentDetailsScreen() {
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.editSaveButton}
-                        onPress={async () => {
-                          try {
-                            if (!isLocationChanged) {
-                              setSelectedState(tournament?.state || '');
-                              setSelectedCity(tournament?.city || '');
-                            }
-                            editTournament.state = selectedState;
-                            editTournament.city = selectedCity;
-                            await updateTournament(editTournament.id, editTournament);
-                            setTournament(editTournament);
-                            setIsEditing(false);
-                            Alert.alert('Success', 'Tournament details updated!');
-                          } catch (err) {
-                            const errorMessage = typeof err === 'object' && err !== null && 'message' in err ? (err as { message?: string }).message : 'Failed to update tournament';
-                            Alert.alert('Error', errorMessage || 'Failed to update tournament');
-                          }
-                        }}
+                        onPress={handleSaveTournamentEdits}
                       >
                         <Text style={styles.editSaveText}>Save Changes</Text>
                       </TouchableOpacity>
@@ -2339,6 +2577,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 13,
   },
+  tossDebugBox: {
+    width: '100%',
+    backgroundColor: '#ECFDF5',
+    borderColor: '#86EFAC',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 8,
+  },
+  tossDebugTitle: {
+    color: '#065F46',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  tossDebugText: {
+    color: '#065F46',
+    fontSize: 11,
+    marginBottom: 2,
+  },
   matchStatusText: {
     marginTop: 6,
     fontSize: 12,
@@ -2595,6 +2853,18 @@ const styles = StyleSheet.create({
     padding: 20,
     elevation: 5,
   },
+  loadingScreen: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loadingScreenText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#334155',
+  },
   editModalContent: {
     width: '94%',
     maxHeight: '88%',
@@ -2618,8 +2888,99 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 14,
   },
+  sharePreviewCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    padding: 16,
+    alignItems: 'center',
+    gap: 8,
+  },
+  sharePreviewLabel: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  sharePreviewSubText: {
+    fontSize: 13,
+    color: '#475569',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  sharePreviewLink: {
+    fontSize: 12,
+    color: '#2563EB',
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  shareQrImage: {
+    width: 220,
+    height: 220,
+    marginTop: 6,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+  },
+  shareModalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+  },
+  shareActionButton: {
+    flex: 1,
+    backgroundColor: '#2563EB',
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  shareActionButtonSecondary: {
+    backgroundColor: '#E2E8F0',
+  },
+  shareActionText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  shareActionTextSecondary: {
+    color: '#0F172A',
+  },
   editFormContent: {
     paddingBottom: 12,
+    gap: 12,
+  },
+  editSectionCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  editSectionTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1E3A8A',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  editOptionsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  editDateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    backgroundColor: '#FFFFFF',
   },
   editFieldLabel: {
     fontWeight: '700',

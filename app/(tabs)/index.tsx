@@ -2,7 +2,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
 import { Calendar, IndianRupee, MapPin, Search, SlidersHorizontal, Trophy, Users, X } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Platform, RefreshControl, ScrollView,
@@ -31,8 +31,6 @@ export default function HomeScreen() {
 
   const auth = useAuth();
   const user = auth?.user;
-  const authHydrated = auth?.authHydrated;
-  const userId = user?.id;
   const displayName = user?.name || '';
   const userRole = (user?.role || 'player').toLowerCase();
   const isOrganizer = userRole === 'organizer';
@@ -51,6 +49,7 @@ export default function HomeScreen() {
   const [cityScope, setCityScope] = useState('Chennai');
   const [citySource, setCitySource] = useState<'default' | 'saved' | 'gps' | 'manual'>('default');
   const [liveScoresByTournament, setLiveScoresByTournament] = useState<Record<number, LiveMatchSummary[]>>({});
+  const tournamentRequestId = useRef(0);
 
   const resolveCityFromDeviceLocation = async () => {
     try {
@@ -140,7 +139,7 @@ export default function HomeScreen() {
 
   const toOvers = (balls: number) => `${Math.floor(balls / 6)}.${balls % 6}`;
 
-  const loadLiveScores = async (tournamentList: any[]) => {
+  const loadLiveScores = async (tournamentList: any[], requestId?: number) => {
     try {
       const activeTournaments = tournamentList.filter((tournament: any) => {
         const status = String(tournament?.status || '').toLowerCase();
@@ -230,33 +229,47 @@ export default function HomeScreen() {
         }),
       );
 
-      setLiveScoresByTournament(Object.fromEntries(liveScoreEntries));
+      if (requestId === undefined || requestId === tournamentRequestId.current) {
+        setLiveScoresByTournament(Object.fromEntries(liveScoreEntries));
+      }
     } catch {
       setLiveScoresByTournament({});
     }
   };
 
-  const loadTournaments = async () => {
+  const loadTournaments = async (forceRefresh = false) => {
+    const requestId = ++tournamentRequestId.current;
+    const requestCity = cityScope;
+    const requestStatus = filterStatus;
     setLoading(true);
     try {
-      const data = await fetchTournaments({ city: cityScope, status: filterStatus });
-      setTournaments(data.tournaments || []);
+      const data = await fetchTournaments(
+        { city: requestCity, status: requestStatus },
+        { forceRefresh },
+      );
+      if (requestId !== tournamentRequestId.current) return;
 
       const tournamentList = data.tournaments || [];
-      if (filterStatus === 'active') {
-        await loadLiveScores(tournamentList);
+      setTournaments(tournamentList);
+
+      if (requestStatus === 'active') {
+        await loadLiveScores(tournamentList, requestId);
       } else {
         setLiveScoresByTournament({});
       }
     } catch (err) {
+      if (requestId !== tournamentRequestId.current) return;
       console.error('Error loading tournaments:', err);
+    } finally {
+      if (requestId === tournamentRequestId.current) {
+        setLoading(false);
+      }
     }
-    setLoading(false);
   };
 
   useFocusEffect(
     React.useCallback(() => {
-      loadTournaments();
+      loadTournaments(true);
     }, [filterStatus, cityScope])
   );
 
@@ -274,7 +287,7 @@ export default function HomeScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadTournaments();
+    await loadTournaments(true);
     setRefreshing(false);
   };
   

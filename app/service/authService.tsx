@@ -33,27 +33,43 @@ export type UserSupportRequest = {
   createdAt?: string;
 };
 
-export async function sendOtpToPhone(phone: string, expoPushToken: string, type: 'signin' | 'signup') {
+export async function requestSignupOtp(phone: string) {
   try {
-    const response = await axios.post(`${BASE_URL}/send-otp`, {
+    const response = await axios.post(`${BASE_URL}/users/signup/request-otp`, {
       phone,
-      expoPushToken,
-      type,
     });
     return response.data;
   } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: false, error: error.response?.data?.error || error.message };
   }
 }
 
-// Create a new user
-export async function createUser(name: string, phone: string, mpin: string, role: 'organizer' | 'player' | 'admin') {
+export async function verifySignupOtp(phone: string, otp: string) {
   try {
-    const response = await axios.post(`${BASE_URL}/users/signup`, {
+    const response = await axios.post(`${BASE_URL}/users/signup/verify-otp`, {
+      phone,
+      otp,
+    });
+    return response.data;
+  } catch (error: any) {
+    return { success: false, error: error.response?.data?.error || error.message };
+  }
+}
+
+export async function completeSignup(
+  name: string,
+  phone: string,
+  mpin: string,
+  role: 'organizer' | 'player',
+  verificationToken: string,
+) {
+  try {
+    const response = await axios.post(`${BASE_URL}/users/signup/complete`, {
       name,
       phone,
       mpin,
       role,
+      verificationToken,
     });
     return response.data;
   } catch (error: any) {
@@ -129,8 +145,9 @@ export async function getSupportRepliesForUser(phone: string | number) {
 }
 
 export default {
-  sendOtpToPhone,
-  createUser,
+  requestSignupOtp,
+  verifySignupOtp,
+  completeSignup,
   authenticateUser,
   submitSupportRequest,
   getAdminNotifications,
