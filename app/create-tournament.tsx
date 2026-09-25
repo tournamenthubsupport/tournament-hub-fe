@@ -19,8 +19,9 @@ import {
 import DropDownPicker from 'react-native-dropdown-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from './auth/auth-context';
-import { getCityItemsForState, INDIAN_STATE_OPTIONS } from './constants/indianLocations';
+import { getCityItemsForState, INDIAN_STATE_OPTIONS } from '../constants/indianLocations';
 import { createTournament, fetchGroundSuggestions } from './service/tournamentService';
+import { getApiErrorMessage } from '../utils/apiError';
 
 const TEAM_OPTIONS = [4, 8, 12, 16, 24];
 
@@ -207,7 +208,10 @@ const CreateTournament = () => {
       Alert.alert('✅ Success', 'Tournament created successfully!');
       router.push('/');
     } catch (err: any) {
-      Alert.alert('❌ Error', err.message);
+      Alert.alert(
+        'Unable to Create Tournament',
+        getApiErrorMessage(err, 'Failed to create the tournament. Please try again.'),
+      );
     }
   };
 
@@ -788,10 +792,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     overflow: 'hidden',
     elevation: 8,
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 10px 18px rgba(15, 23, 42, 0.12)' }
+      : { shadowColor: '#0F172A', shadowOpacity: 0.12, shadowRadius: 18, shadowOffset: { width: 0, height: 10 } }),
   },
   dropdownModalContent: {
     borderTopLeftRadius: 28,
@@ -819,10 +822,9 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 14,
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 6px 14px rgba(15, 23, 42, 0.06)' }
+      : { shadowColor: '#0F172A', shadowOpacity: 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } }),
     elevation: 2,
   },
   dropdownItem: {

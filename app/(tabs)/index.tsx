@@ -16,6 +16,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '../auth/auth-context';
 import { Header } from '../components/AppHeader';
 import { fetchMatchScorecard, fetchTournamentMatches, fetchTournaments } from '../service/tournamentService';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 type LiveMatchSummary = {
   matchId: number;
@@ -24,6 +25,8 @@ type LiveMatchSummary = {
   runs: number;
   wickets: number;
   overs: string;
+  unavailable?: boolean;
+  errorMessage?: string;
 };
 
 export default function HomeScreen() {
@@ -40,6 +43,7 @@ export default function HomeScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [tournaments, setTournaments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [filterDate, setFilterDate] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [filterLocation, setFilterLocation] = useState('Chennai');
@@ -111,16 +115,44 @@ export default function HomeScreen() {
   }, []);
 
   const applyCityFilter = () => {
-    const nextCity = (filterLocation || '').trim() || 'Chennai';
+    const nextCity = (filterLocation || '').trim();
     setCityScope(nextCity);
     setCitySource('manual');
     if (Platform.OS === 'web') {
       try {
-        window.localStorage.setItem('th_current_city', nextCity);
+        if (nextCity) {
+          window.localStorage.setItem('th_current_city', nextCity);
+        } else {
+          window.localStorage.removeItem('th_current_city');
+        }
       } catch {
         // Ignore localStorage write failures.
       }
     }
+  };
+
+  const clearSearchFilter = () => setSearchQuery('');
+
+  const clearDateFilter = () => setFilterDate(null);
+
+  const clearCityFilter = () => {
+    setFilterLocation('');
+    setCityScope('');
+    setCitySource('manual');
+    if (Platform.OS === 'web') {
+      try {
+        window.localStorage.removeItem('th_current_city');
+      } catch {
+        // Ignore localStorage cleanup failures.
+      }
+    }
+  };
+
+  const clearAllFilters = () => {
+    clearSearchFilter();
+    clearDateFilter();
+    clearCityFilter();
+    setShowDatePicker(false);
   };
 
   const getInningsField = (scorecard: any) => {
@@ -209,7 +241,7 @@ export default function HomeScreen() {
                     wickets,
                     overs,
                   } as LiveMatchSummary;
-                } catch {
+                } catch (error) {
                   return {
                     matchId: Number(match.id),
                     battingTeamName: String(match?.battingTeamName || match?.homeTeamName || 'Batting Team'),
@@ -217,6 +249,8 @@ export default function HomeScreen() {
                     runs: 0,
                     wickets: 0,
                     overs: '0.0',
+                    unavailable: true,
+                    errorMessage: getApiErrorMessage(error, 'Live score is temporarily unavailable.'),
                   } as LiveMatchSummary;
                 }
               }),
@@ -242,6 +276,7 @@ export default function HomeScreen() {
     const requestCity = cityScope;
     const requestStatus = filterStatus;
     setLoading(true);
+    setLoadError('');
     try {
       const data = await fetchTournaments(
         { city: requestCity, status: requestStatus },
@@ -260,6 +295,7 @@ export default function HomeScreen() {
     } catch (err) {
       if (requestId !== tournamentRequestId.current) return;
       console.error('Error loading tournaments:', err);
+      setLoadError(getApiErrorMessage(err, 'Unable to load tournaments. Please try again.'));
     } finally {
       if (requestId === tournamentRequestId.current) {
         setLoading(false);
@@ -347,9 +383,9 @@ export default function HomeScreen() {
       tournament.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       tournament.location.toLowerCase().includes(searchQuery.toLowerCase());
     // Filter by location
-    const matchesLocation = filterLocation
-      ? String(tournament.location || '').toLowerCase().includes(filterLocation.toLowerCase()) ||
-        String(tournament.city || '').toLowerCase().includes(filterLocation.toLowerCase())
+    const matchesLocation = cityScope
+      ? String(tournament.location || '').toLowerCase().includes(cityScope.toLowerCase()) ||
+        String(tournament.city || '').toLowerCase().includes(cityScope.toLowerCase())
       : true;
     // Filter by date
     const matchesDate = filterDate
@@ -445,6 +481,48 @@ export default function HomeScreen() {
               )}
             </View>
           )}
+          {(searchQuery.trim() || cityScope || filterDate) && (
+            <View style={styles.appliedFiltersSection}>
+              <View style={styles.appliedFiltersHeader}>
+                <Text style={styles.appliedFiltersTitle}>Applied filters</Text>
+                <TouchableOpacity
+                  style={styles.clearAllButton}
+                  onPress={clearAllFilters}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear all filters"
+                >
+                  <X size={16} color="#B91C1C" />
+                  <Text style={styles.clearAllText}>Clear all</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.appliedFiltersRow}>
+                {!!searchQuery.trim() && (
+                  <View style={styles.appliedFilterChip}>
+                    <Text style={styles.appliedFilterText}>Search: {searchQuery.trim()}</Text>
+                    <TouchableOpacity onPress={clearSearchFilter} accessibilityLabel="Clear search filter">
+                      <X size={14} color="#166534" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {!!cityScope && (
+                  <View style={styles.appliedFilterChip}>
+                    <Text style={styles.appliedFilterText}>City: {cityScope}</Text>
+                    <TouchableOpacity onPress={clearCityFilter} accessibilityLabel="Clear city filter">
+                      <X size={14} color="#166534" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {!!filterDate && (
+                  <View style={styles.appliedFilterChip}>
+                    <Text style={styles.appliedFilterText}>Date: {formatDate(filterDate.toISOString())}</Text>
+                    <TouchableOpacity onPress={clearDateFilter} accessibilityLabel="Clear date filter">
+                      <X size={14} color="#166534" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
         </View>
         <View style={styles.statusChipsRowOuter}>
   {['upcoming', 'active', 'completed'].map(status => (
@@ -468,7 +546,15 @@ export default function HomeScreen() {
         {/* Tournaments List with updated status */}
         <View style={styles.tournamentsSection}>
           <Text style={styles.sectionTitle}>Cricket Tournaments</Text>
-          {filteredTournaments.length === 0 && (
+          {!!loadError && (
+            <View style={styles.errorState}>
+              <Text style={styles.errorStateText}>{loadError}</Text>
+              <TouchableOpacity style={styles.retryButton} onPress={() => loadTournaments(true)}>
+                <Text style={styles.retryButtonText}>Try Again</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {!loadError && filteredTournaments.length === 0 && (
             <Text style={styles.noResultsText}>No tournaments found.</Text>
           )}
           {filteredTournaments.map((tournament) => {
@@ -624,6 +710,10 @@ export default function HomeScreen() {
                     <Text style={styles.liveScoreTitle}>Live Score</Text>
                     {liveMatches.map((liveMatch) => (
                       <View key={`${tournament.id}-${liveMatch.matchId}`} style={styles.liveScoreCard}>
+                        {liveMatch.unavailable ? (
+                          <Text style={styles.errorStateText}>{liveMatch.errorMessage}</Text>
+                        ) : (
+                          <>
                         <View style={styles.liveScoreTopRow}>
                           <Text style={styles.liveScoreBadge}>LIVE</Text>
                           <Text style={styles.liveOversText}>Ov {liveMatch.overs}</Text>
@@ -631,6 +721,8 @@ export default function HomeScreen() {
                         <Text style={styles.liveBattingTeam}>{liveMatch.battingTeamName}</Text>
                         <Text style={styles.liveRunsText}>{liveMatch.runs}/{liveMatch.wickets}</Text>
                         <Text style={styles.liveBowlingText}>Bowling: {liveMatch.bowlingTeamName}</Text>
+                          </>
+                        )}
                       </View>
                     ))}
                   </View>
@@ -792,6 +884,61 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
+  appliedFiltersSection: {
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    paddingTop: 10,
+  },
+  appliedFiltersHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  appliedFiltersTitle: {
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  clearAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingLeft: 8,
+  },
+  clearAllText: {
+    color: '#B91C1C',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  appliedFiltersRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  appliedFilterChip: {
+    maxWidth: '100%',
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    backgroundColor: '#ECFDF5',
+    paddingLeft: 10,
+    paddingRight: 8,
+    paddingVertical: 6,
+  },
+  appliedFilterText: {
+    flexShrink: 1,
+    color: '#166534',
+    fontSize: 13,
+    fontWeight: '600',
+  },
   statusChipsRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 },
   statusChip: {
     backgroundColor: '#E5E7EB',
@@ -808,6 +955,10 @@ const styles = StyleSheet.create({
   tournamentsSection: { paddingHorizontal: 16, paddingBottom: 20 },
   sectionTitle: { fontSize: 18, fontWeight: '600', color: '#111827', marginBottom: 12 },
   noResultsText: { textAlign: 'center', color: '#888', fontStyle: 'italic', marginVertical: 20 },
+  errorState: { alignItems: 'center', paddingVertical: 20, gap: 10 },
+  errorStateText: { color: '#B91C1C', textAlign: 'center', fontFamily: 'Inter-Regular' },
+  retryButton: { backgroundColor: '#16A34A', borderRadius: 8, paddingHorizontal: 18, paddingVertical: 10 },
+  retryButtonText: { color: '#FFFFFF', fontFamily: 'Inter-SemiBold' },
 
   simpleCard: {
     backgroundColor: '#FFFFFF',

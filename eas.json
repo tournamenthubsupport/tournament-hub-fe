@@ -11,7 +11,9 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_BASE_URL": "https://tournament-hub.onrender.com/api"
+        "EXPO_PUBLIC_BASE_URL": "https://tournament-hub.onrender.com/api",
+        "NPM_CONFIG_REGISTRY": "https://registry.npmjs.org/",
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
       },
       "android": {
         "buildType": "apk"
@@ -21,7 +23,9 @@
       "autoIncrement": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_BASE_URL": "https://tournament-hub.onrender.com/api"
+        "EXPO_PUBLIC_BASE_URL": "https://tournament-hub.onrender.com/api",
+        "NPM_CONFIG_REGISTRY": "https://registry.npmjs.org/",
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
       },
       "android": {
         "buildType": "apk"

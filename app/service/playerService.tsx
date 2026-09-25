@@ -1,5 +1,6 @@
 import axios from 'axios';
-import { API_BASE_URL } from '../constants/apiBaseUrl';
+import { API_BASE_URL } from '../../constants/apiBaseUrl';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 const BASE_URL = API_BASE_URL;
 
@@ -9,7 +10,7 @@ export const insertPlayer = async (playerData: any) => {
       return response.data;
     } catch (error) {
       console.error('Error inserting player:', error);
-      throw error;
+      throw new Error(getApiErrorMessage(error, 'Failed to add the player.'));
     }
   };
 
@@ -19,7 +20,7 @@ export const insertPlayersBulk = async (players: any[]) => {
     return response.data;
   } catch (error) {
     console.error('Error bulk inserting players:', error);
-    throw error;
+    throw new Error(getApiErrorMessage(error, 'Failed to add players.'));
   }
 };
 
@@ -30,7 +31,7 @@ export const insertPlayersBulk = async (players: any[]) => {
       const data = response.data as { players: any[] };
       return data.players;
     } catch (error) {
-      return [];
+      throw new Error(getApiErrorMessage(error, 'Player search is unavailable. Please try again.'));
     }
   };
 export default { insertPlayer, insertPlayersBulk, searchPlayers };

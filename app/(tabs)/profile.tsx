@@ -32,6 +32,7 @@ import { getPlayersForTeams, getTeamsForPlayer } from '../service/teamPlayerServ
 import { fetchTeamsByMobile } from '../service/teamsService';
 import { fetchTournamentsByContact } from '../service/tournamentService';
 import { getTournamentsForTeams } from '../service/tournamentTeamsService';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 export default function ProfileScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -130,8 +131,8 @@ export default function ProfileScreen() {
       setLoadingAdminNotifications(true);
       const result = await getAdminNotifications();
       if ((result as any)?.error) {
-        console.error('Failed to fetch admin notifications:', (result as any).error);
         setAdminNotifications([]);
+        Alert.alert('Unable to Load Notifications', String((result as any).error));
         return;
       }
 
@@ -140,6 +141,7 @@ export default function ProfileScreen() {
     } catch (error) {
       console.error('Failed to fetch admin notifications:', error);
       setAdminNotifications([]);
+      Alert.alert('Unable to Load Notifications', getApiErrorMessage(error, 'Please try again.'));
     } finally {
       setLoadingAdminNotifications(false);
     }
@@ -154,8 +156,8 @@ export default function ProfileScreen() {
       }
 
       setAdminNotifications((prev) => prev.filter((item) => item.id !== notificationId));
-    } catch {
-      Alert.alert('Delete Failed', 'Unable to delete notification. Please try again.');
+    } catch (error) {
+      Alert.alert('Delete Failed', getApiErrorMessage(error, 'Unable to delete notification. Please try again.'));
     }
   };
 
@@ -189,8 +191,8 @@ export default function ProfileScreen() {
       setReplyMessage('');
       await loadAdminNotifications();
       Alert.alert('Reply Saved', 'Your reply has been saved for this support request.');
-    } catch {
-      Alert.alert('Reply Failed', 'Unable to save reply. Please try again.');
+    } catch (error) {
+      Alert.alert('Reply Failed', getApiErrorMessage(error, 'Unable to save reply. Please try again.'));
     } finally {
       setSubmittingReply(false);
     }
@@ -215,8 +217,8 @@ export default function ProfileScreen() {
       setLoadingUserSupportReplies(true);
       const result = await getSupportRepliesForUser(String(user.phone).trim());
       if ((result as any)?.error) {
-        console.error('Failed to fetch support replies:', (result as any).error);
         setUserSupportRequests([]);
+        Alert.alert('Unable to Load Support Inbox', String((result as any).error));
         return;
       }
 
@@ -225,6 +227,7 @@ export default function ProfileScreen() {
     } catch (error) {
       console.error('Failed to fetch support replies:', error);
       setUserSupportRequests([]);
+      Alert.alert('Unable to Load Support Inbox', getApiErrorMessage(error, 'Please try again.'));
     } finally {
       setLoadingUserSupportReplies(false);
     }
@@ -337,6 +340,7 @@ export default function ProfileScreen() {
         setRecentCreatedTournaments([]);
         setRecentCreatedTeams([]);
         setUpcomingJoinedTournaments([]);
+        Alert.alert('Unable to Load Profile', getApiErrorMessage(err, 'Could not load profile details. Please try again.'));
       }
     };
 
@@ -970,13 +974,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     borderLeftWidth: 4,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 }),
     elevation: 2,
   },
   statIcon: {
@@ -1029,13 +1029,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
     padding: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 }),
     elevation: 2,
   },
   tournamentsSection: {
@@ -1049,13 +1045,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 }),
     elevation: 2,
   },
   tournamentInfo: {
@@ -1129,13 +1121,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 }),
     elevation: 2,
   },
   teamImage: {
@@ -1193,13 +1181,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 }),
     elevation: 2,
   },
   userReplyTitle: {
@@ -1234,13 +1218,9 @@ const styles = StyleSheet.create({
     marginRight: 12,
     width: 140,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 }),
     elevation: 2,
   },
   achievementCardLocked: {
@@ -1336,13 +1316,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8 }),
     elevation: 2,
   },
   adminNotificationTitle: {
@@ -1417,13 +1393,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 12,
     marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 1px 4px rgba(0, 0, 0, 0.05)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4 }),
     elevation: 1,
   },
   menuOptionLeft: {
@@ -1454,13 +1426,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginHorizontal: 20,
     marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 1px 4px rgba(0, 0, 0, 0.05)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4 }),
     elevation: 1,
   },
   logoutText: {

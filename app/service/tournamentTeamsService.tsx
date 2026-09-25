@@ -1,5 +1,6 @@
 import axios from 'axios';
-import { API_BASE_URL } from '../constants/apiBaseUrl';
+import { API_BASE_URL } from '../../constants/apiBaseUrl';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 export async function addTeamToTournament(tournament_id: number, team_id: number, fee_paid: boolean = false) {
   try {
@@ -7,17 +8,17 @@ export async function addTeamToTournament(tournament_id: number, team_id: number
     return res.data;
   } catch (err) {
     console.error('API Error:', err);
-    throw err;
+    throw new Error(getApiErrorMessage(err, 'Failed to join the tournament.'));
   }
 }
 
 export async function updateTeamInTournament(tournament_id: number, team_id: number, fee_paid: boolean) {
   try {
-    const res = await axios.put(`${API_BASE_URL}/update`, { tournament_id, team_id, fee_paid });
+    const res = await axios.put(`${API_BASE_URL}/tournament-teams/update`, { tournament_id, team_id, fee_paid });
     return res.data;
   } catch (err) {
     console.error('API Error:', err);
-    throw err;
+    throw new Error(getApiErrorMessage(err, 'Failed to update the tournament team.'));
   }
 }
 
@@ -27,7 +28,7 @@ export async function getTeamsByTournament(tournament_id: number) {
     return res.data;
   } catch (err) {
     console.error('API Error:', err);
-    throw err;
+    throw new Error(getApiErrorMessage(err, 'Failed to load tournament teams.'));
   }
 }
 
@@ -39,7 +40,7 @@ export async function getPendingRequestsByOrganizer(organiser_contact: string) {
     return res.data;
   } catch (err) {
     console.error('API Error:', err);
-    throw err;
+    throw new Error(getApiErrorMessage(err, 'Failed to load join requests.'));
   }
 }
 
@@ -49,30 +50,30 @@ export async function getTournamentsForTeams(team_ids: number[]) {
       return res.data;
     } catch (err) {
       console.error('API Error:', err);
-      throw err;
+      throw new Error(getApiErrorMessage(err, 'Failed to load joined tournaments.'));
     }
   }
 
 export async function getTeamsByTournamentAndTeamIds(tournament_id: number, team_ids: number[]) {
   try {
-    const res = await axios.post(`${API_BASE_URL}/${tournament_id}/teams`, { team_ids });
+    const res = await axios.post(`${API_BASE_URL}/tournament-teams/${tournament_id}/teams`, { team_ids });
     return res.data;
   } catch (err) {
     console.error('API Error:', err);
-    throw err;
+    throw new Error(getApiErrorMessage(err, 'Failed to load tournament teams.'));
   }
 }
 
 export async function deleteTeamFromTournament(tournament_id: number, team_id: number) {
     try {
-      const res = await axios.delete(`${API_BASE_URL}/remove`, {
+      const res = await axios.delete(`${API_BASE_URL}/tournament-teams/remove`, {
         // @ts-ignore: 'data' is valid for Axios but not in some type definitions
         data: { tournament_id, team_id }
       } as any);
       return res.data;
     } catch (err) {
       console.error('API Error:', err);
-      throw err;
+      throw new Error(getApiErrorMessage(err, 'Failed to remove the team from the tournament.'));
     }
   }
 
@@ -82,7 +83,7 @@ export async function deleteTeamFromTournament(tournament_id: number, team_id: n
       return res.data;
     } catch (err) {
       console.error('API Error:', err);
-      throw err;
+      throw new Error(getApiErrorMessage(err, 'Failed to approve the team.'));
     }
   }
   
@@ -95,7 +96,7 @@ export async function deleteTeamFromTournament(tournament_id: number, team_id: n
       return res.data;
     } catch (err) {
       console.error('API Error:', err);
-      throw err;
+      throw new Error(getApiErrorMessage(err, 'Failed to reject the team.'));
     }
   }
 
@@ -105,7 +106,7 @@ export async function deleteTeamFromTournament(tournament_id: number, team_id: n
       return res.data;
     } catch (err) {
       console.error('API Error:', err);
-      throw err;
+      throw new Error(getApiErrorMessage(err, 'Failed to load the tournament team.'));
     }
   }
 
@@ -114,6 +115,7 @@ export default {
   updateTeamInTournament,
   getTeamsByTournament,
   getPendingRequestsByOrganizer,
+  getTournamentsForTeams,
   getTeamsByTournamentAndTeamIds,
   deleteTeamFromTournament,
   approveTeamInTournament,

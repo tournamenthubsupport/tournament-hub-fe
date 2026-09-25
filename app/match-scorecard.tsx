@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -147,6 +148,7 @@ export default function MatchScorecardScreen() {
   const organiserContact = String(auth?.user?.phone || '').replace('+91', '').replace('+', '').trim();
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
   const [data, setData] = useState<MatchScorecardResponse | null>(null);
   const [selectedOvers, setSelectedOvers] = useState<number>(5);
@@ -157,7 +159,8 @@ export default function MatchScorecardScreen() {
 
   const loadScorecard = async (options?: { silent?: boolean }) => {
     if (!Number.isInteger(matchId) || matchId <= 0) {
-      Alert.alert('Invalid match', 'Unable to open scorecard for this match.');
+      setLoadError('This scorecard link is invalid or missing a match ID.');
+      setLoading(false);
       return;
     }
 
@@ -166,6 +169,7 @@ export default function MatchScorecardScreen() {
     }
 
     try {
+      setLoadError('');
       const response = (await fetchMatchScorecard(matchId, organiserContact)) as MatchScorecardResponse;
       setData(response);
 
@@ -174,7 +178,7 @@ export default function MatchScorecardScreen() {
       }
       setHasLoadedOnce(true);
     } catch (error) {
-      Alert.alert('Error', toUserFacingScorecardError(error, 'Failed to load scorecard. Please try again.'));
+      setLoadError(toUserFacingScorecardError(error, 'Failed to load scorecard. Please try again.'));
     } finally {
       if (!options?.silent || !hasLoadedOnce) {
         setLoading(false);
@@ -489,7 +493,16 @@ export default function MatchScorecardScreen() {
   if (!data) {
     return (
       <SafeAreaView style={styles.loaderWrap}>
-        <Text style={styles.errorText}>Unable to load scorecard.</Text>
+        <Text style={styles.errorText}>{loadError || 'Unable to load scorecard.'}</Text>
+        {Number.isInteger(matchId) && matchId > 0 ? (
+          <TouchableOpacity style={styles.setupButton} onPress={() => loadScorecard()}>
+            <Text style={styles.setupButtonText}>Try Again</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.setupButton} onPress={handleBackNavigation}>
+            <Text style={styles.setupButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        )}
       </SafeAreaView>
     );
   }
@@ -1226,10 +1239,9 @@ const styles = StyleSheet.create({
     height: 36,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 1px 2px rgba(0, 0, 0, 0.15)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.15, shadowRadius: 2 }),
     elevation: 3,
   },
   closeButtonText: {

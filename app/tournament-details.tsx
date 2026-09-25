@@ -34,7 +34,7 @@ import {
 import DropDownPicker from 'react-native-dropdown-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from './auth/auth-context';
-import { getCityItemsForState, INDIAN_STATE_OPTIONS } from './constants/indianLocations';
+import { getCityItemsForState, INDIAN_STATE_OPTIONS } from '../constants/indianLocations';
 import { fetchSportById } from './service/sportsService';
 import { getPlayersForTeams } from './service/teamPlayerService';
 import { fetchTeamsByIds, fetchTeamsByMobile } from './service/teamsService';
@@ -50,6 +50,7 @@ import {
   updateTournament
 } from './service/tournamentService';
 import { addTeamToTournament, approveTeamInTournament, getTeamsByTournament, rejectTeamInTournament } from './service/tournamentTeamsService';
+import { getApiErrorMessage } from '../utils/apiError';
 
 type Team = {
   id: number;
@@ -160,8 +161,11 @@ export default function TournamentDetailsScreen() {
     created_date: string;
   }>();
   const [loading, setLoading] = useState(true);
+  const [detailError, setDetailError] = useState('');
+  const [detailReloadKey, setDetailReloadKey] = useState(0);
   const [sportNames, setSportNames] = useState<{ [key: number]: string }>({});
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [joinError, setJoinError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [userTeams, setUserTeams] = useState<Team[]>([]);
@@ -180,6 +184,7 @@ export default function TournamentDetailsScreen() {
   const [cityList, setCityList] = useState<{ label: string; value: string }[]>([]);
   const [matches, setMatches] = useState<TournamentMatch[]>([]);
   const [matchesLoading, setMatchesLoading] = useState(false);
+  const [matchesError, setMatchesError] = useState('');
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [resetMatchesLoading, setResetMatchesLoading] = useState(false);
   const [showTournamentDetails, setShowTournamentDetails] = useState(true);
@@ -397,8 +402,7 @@ export default function TournamentDetailsScreen() {
       setIsLocationChanged(false);
       Alert.alert('Success', 'Tournament details updated!');
     } catch (err) {
-      const errorMessage = typeof err === 'object' && err !== null && 'message' in err ? (err as { message?: string }).message : 'Failed to update tournament';
-      Alert.alert('Error', errorMessage || 'Failed to update tournament');
+      Alert.alert('Unable to Update Tournament', getApiErrorMessage(err, 'Failed to update tournament.'));
     }
   };
 
@@ -435,6 +439,7 @@ export default function TournamentDetailsScreen() {
       }
 
       setLoading(true);
+      setDetailError('');
       try {
         const data = await fetchTournamentsById(parseInt(tournamentIdParam, 10));
         setTournament(data.tournament || {});
@@ -453,12 +458,13 @@ export default function TournamentDetailsScreen() {
         setSportNames(sportNameMap);
       } catch (err) {
         console.error('Error loading tournaments:', err);
+        setDetailError(getApiErrorMessage(err, 'Unable to load tournament details. Please try again.'));
       } finally {
         setLoading(false); 
       }
     };
     loadTournaments();
-  }, [authHydrated, tournamentIdParam, user?.id]);
+  }, [authHydrated, detailReloadKey, tournamentIdParam, user?.id]);
 
   const fetchJoinedTeams = async () => {
     if (tournament?.id) {
@@ -493,7 +499,7 @@ export default function TournamentDetailsScreen() {
           setLoading(false);
         }
       } catch (err) {
-        Alert.alert('Error fetching joined teams. Please try again later.');
+        Alert.alert('Unable to Load Joined Teams', getApiErrorMessage(err, 'Please try again later.'));
       }
     }
   };
@@ -505,6 +511,7 @@ export default function TournamentDetailsScreen() {
 
     matchesLoadInFlightRef.current = tournamentId;
     setMatchesLoading(true);
+    setMatchesError('');
     try {
       const response = await fetchTournamentMatches(tournamentId);
       const rows = Array.isArray(response?.matches) ? response.matches : [];
@@ -525,8 +532,8 @@ export default function TournamentDetailsScreen() {
           })),
         });
       }
-    } catch {
-      setMatches([]);
+    } catch (error) {
+      setMatchesError(getApiErrorMessage(error, 'Unable to load the match schedule. Please try again.'));
     } finally {
       matchesLoadInFlightRef.current = null;
       setMatchesLoading(false);
@@ -545,10 +552,7 @@ export default function TournamentDetailsScreen() {
       await loadMatches(tournament.id);
       Alert.alert('Success', 'Tournament matches scheduled successfully.');
     } catch (err) {
-      const message = typeof err === 'object' && err !== null && 'message' in err
-        ? String((err as { message?: string }).message || 'Failed to schedule matches')
-        : 'Failed to schedule matches';
-      Alert.alert('Error', message);
+      Alert.alert('Unable to Schedule Matches', getApiErrorMessage(err, 'Failed to schedule matches.'));
     } finally {
       setScheduleLoading(false);
     }
@@ -572,10 +576,7 @@ export default function TournamentDetailsScreen() {
               await loadMatches(tournament.id);
               Alert.alert('Success', 'All tournament matches and scorecards were reset.');
             } catch (err) {
-              const message = typeof err === 'object' && err !== null && 'message' in err
-                ? String((err as { message?: string }).message || 'Failed to reset matches')
-                : 'Failed to reset matches';
-              Alert.alert('Error', message);
+              Alert.alert('Unable to Reset Matches', getApiErrorMessage(err, 'Failed to reset matches.'));
             } finally {
               setResetMatchesLoading(false);
             }
@@ -653,8 +654,8 @@ export default function TournamentDetailsScreen() {
         );
         return;
       }
-    } catch {
-      Alert.alert('Cannot toss', 'Unable to verify team players right now. Please try again.');
+    } catch (error) {
+      Alert.alert('Cannot Toss', getApiErrorMessage(error, 'Unable to verify team players right now. Please try again.'));
       return;
     }
 
@@ -726,10 +727,7 @@ export default function TournamentDetailsScreen() {
       setTossModalMatch(null);
       Alert.alert('Success', 'Toss completed and saved.');
     } catch (err) {
-      const message = typeof err === 'object' && err !== null && 'message' in err
-        ? String((err as { message?: string }).message || 'Failed to save toss')
-        : 'Failed to save toss';
-      Alert.alert('Error', message);
+      Alert.alert('Unable to Save Toss', getApiErrorMessage(err, 'Failed to save toss.'));
     } finally {
       setTossSubmitting(false);
     }
@@ -768,10 +766,7 @@ export default function TournamentDetailsScreen() {
       setWinnerPickerMatch(null);
       Alert.alert('Success', `${teamName} marked as winner.`);
     } catch (err) {
-      const message = typeof err === 'object' && err !== null && 'message' in err
-        ? String((err as { message?: string }).message || 'Failed to complete match')
-        : 'Failed to complete match';
-      Alert.alert('Error', message);
+      Alert.alert('Unable to Complete Match', getApiErrorMessage(err, 'Failed to complete match.'));
     } finally {
       setWinnerSubmitting(false);
     }
@@ -796,7 +791,8 @@ export default function TournamentDetailsScreen() {
         const data = await fetchTeamsByMobile(mobile);
         setUserTeams(data.teams);
       }
-      } catch {
+      } catch (error) {
+        Alert.alert('Unable to Load Your Teams', getApiErrorMessage(error, 'Please try again.'));
     }
   };
   const joinTeam = async () => {
@@ -808,11 +804,19 @@ export default function TournamentDetailsScreen() {
       const teamId = selectedTeam.id;
       const tournamentId = tournament.id;
       const feePaid = true;
-      await addTeamToTournament(tournamentId, teamId, feePaid);
-      fetchJoinedTeams();
-      Alert.alert('✅ Success', 'Joined the Tournament Successfully!');
+      const result = await addTeamToTournament(tournamentId, teamId, feePaid);
+      await fetchJoinedTeams();
+      setJoinError('');
+      setShowJoinModal(false);
+      Alert.alert('Success', result?.message || 'Joined the tournament successfully.');
     } catch (error) {
       console.error('Error joining team:', error);
+      const message = getApiErrorMessage(error, 'The team could not join this tournament. Please try again.');
+      setJoinError(message);
+      Alert.alert(
+        'Unable to Join Tournament',
+        message,
+      );
     }
   }
 
@@ -920,6 +924,7 @@ export default function TournamentDetailsScreen() {
     }
 
     loadTeams();
+    setJoinError('');
     setShowJoinModal(true);
   };
 
@@ -939,8 +944,8 @@ export default function TournamentDetailsScreen() {
               await deleteTournamentById(tournament.id, stripCountryCode(currentUserMobile));
               Alert.alert('Success', 'Tournament deleted successfully.');
               router.replace('/(tabs)');
-            } catch {
-              Alert.alert('Error', 'Failed to delete tournament. Please try again.');
+            } catch (error) {
+              Alert.alert('Unable to Delete Tournament', getApiErrorMessage(error, 'Failed to delete tournament. Please try again.'));
             }
           },
         },
@@ -965,8 +970,9 @@ export default function TournamentDetailsScreen() {
   const approveTeam = async (id: number) => {
     if (!tournament) return;
     try {
-      await approveTeamInTournament(tournament.id, id);
-      fetchJoinedTeams();
+      const result = await approveTeamInTournament(tournament.id, id);
+      await fetchJoinedTeams();
+      Alert.alert('Team Approved', result?.message || 'The team has been approved.');
   
       // Find the team to get the creator's WhatsApp number
       const team = joinedTeams.find((team: any) => team.id === id);
@@ -977,14 +983,16 @@ export default function TournamentDetailsScreen() {
       }
     } catch (error) {
       console.error('Approve team error:', error);
+      Alert.alert('Unable to Approve Team', getApiErrorMessage(error, 'Failed to approve this team.'));
     }
   };
 
   const rejectTeam = async (id: number) => {
     if (!tournament) return;
     try {
-      await rejectTeamInTournament(tournament.id, id);
-      fetchJoinedTeams();
+      const result = await rejectTeamInTournament(tournament.id, id);
+      await fetchJoinedTeams();
+      Alert.alert('Team Rejected', result?.message || 'The team has been rejected.');
   
       // Find the team to get the creator's WhatsApp number
       const team = joinedTeams.find((team: any) => team.id === id);
@@ -995,6 +1003,7 @@ export default function TournamentDetailsScreen() {
       }
     } catch (error) {
       console.error('Reject team error:', error);
+      Alert.alert('Unable to Reject Team', getApiErrorMessage(error, 'Failed to reject this team.'));
     }
   };
 
@@ -1029,6 +1038,13 @@ export default function TournamentDetailsScreen() {
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
                  <ActivityIndicator size="large" color="#22C55E" />
                </View>
+        ) : detailError ? (
+          <View style={styles.loadingScreen}>
+            <Text style={styles.errorText}>{detailError}</Text>
+            <TouchableOpacity style={styles.joinButton} onPress={() => setDetailReloadKey((value) => value + 1)}>
+              <Text style={styles.buttonText}>Try Again</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <ScrollView
             ref={detailsScrollRef}
@@ -1238,7 +1254,18 @@ export default function TournamentDetailsScreen() {
                 </>
                 )}
 
-                {matches.length > 0 && (
+                {!!matchesError && (
+                  <View style={styles.loadingScreen}>
+                    <Text style={styles.errorText}>{matchesError}</Text>
+                    {!!tournament?.id && (
+                      <TouchableOpacity style={styles.joinButton} onPress={() => loadMatches(tournament.id)}>
+                        <Text style={styles.buttonText}>Try Again</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+
+                {!matchesError && matches.length > 0 && (
                   <View style={styles.matchSection}>
                     <Text style={styles.sectionTitle}>Match Schedule</Text>
                     {matchesLoading ? (
@@ -1537,7 +1564,10 @@ export default function TournamentDetailsScreen() {
                           styles.teamItem,
                           selectedTeam?.id === item.id && styles.selectedTeam,
                         ]}
-                        onPress={() => setSelectedTeam(item)}
+                        onPress={() => {
+                          setSelectedTeam(item);
+                          setJoinError('');
+                        }}
                       >
                         <Text style={styles.teamName}>{item.name}</Text>
                         <Text style={styles.teamLocation}>{item.location}</Text>
@@ -1547,6 +1577,8 @@ export default function TournamentDetailsScreen() {
                       <Text style={styles.noResultsText}>No teams found.</Text>
                     }
                   />
+
+                  {!!joinError && <Text style={styles.errorText}>{joinError}</Text>}
 
 
                   {/* Confirm Join Button */}
@@ -1558,10 +1590,7 @@ export default function TournamentDetailsScreen() {
                           team.name.toLowerCase().includes(searchQuery.toLowerCase())
                       ).length === 0) && styles.disabledButton,
                     ]}
-                    onPress={() => {
-                      joinTeam();
-                      setShowJoinModal(false);
-                    }}
+                    onPress={joinTeam}
                     disabled={
                       !selectedTeam ||
                       userTeams.filter(
@@ -2018,10 +2047,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 10,
     marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 }),
     elevation: 1,
   },
   dropdownField: {
@@ -2031,10 +2059,9 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 14,
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 6px 14px rgba(15, 23, 42, 0.06)' }
+      : { shadowColor: '#0F172A', shadowOpacity: 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } }),
     elevation: 2,
   },
   dropdownMenu: {
@@ -2044,10 +2071,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     overflow: 'hidden',
     elevation: 8,
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 10px 18px rgba(15, 23, 42, 0.12)' }
+      : { shadowColor: '#0F172A', shadowOpacity: 0.12, shadowRadius: 18, shadowOffset: { width: 0, height: 10 } }),
   },
   dropdownModalContent: {
     borderTopLeftRadius: 28,
@@ -2344,10 +2370,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
     right: 54,
     top: 28,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.25,
-    shadowRadius: 2,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 1px 2px rgba(0, 0, 0, 0.25)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.25, shadowRadius: 2 }),
     elevation: 2,
   },
   heroArcOne: {
@@ -2386,10 +2411,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 12,
     marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 2px 4px rgba(0, 0, 0, 0.10)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 }),
     elevation: 2,
   },
   label: {
@@ -2505,10 +2529,9 @@ const styles = StyleSheet.create({
     width: 84,
     height: 84,
     borderRadius: 42,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 8px 10px rgba(15, 23, 42, 0.35)' }
+      : { shadowColor: '#0F172A', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.35, shadowRadius: 10 }),
     elevation: 10,
   },
   coinFaceText: {
@@ -2538,10 +2561,9 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginTop: 8,
     marginBottom: 6,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28,
-    shadowRadius: 8,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 6px 8px rgba(15, 23, 42, 0.28)' }
+      : { shadowColor: '#0F172A', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 8 }),
     elevation: 8,
   },
   tossResultSubText: {
@@ -2865,6 +2887,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#334155',
   },
+  errorText: {
+    color: '#B91C1C',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
   editModalContent: {
     width: '94%',
     maxHeight: '88%',
@@ -3174,10 +3202,9 @@ const styles = StyleSheet.create({
     height: 36,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 1px 2px rgba(0, 0, 0, 0.15)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.15, shadowRadius: 2 }),
     elevation: 3,
   },
   closeButtonText: {

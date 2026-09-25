@@ -1,6 +1,7 @@
 // services/tournamentService.ts
 
-import { API_BASE_URL } from '../constants/apiBaseUrl';
+import { API_BASE_URL } from '../../constants/apiBaseUrl';
+import { fetchApiJson, throwApiResponseError } from '../../utils/apiError';
 
 const BASE_URL = API_BASE_URL;
 
@@ -64,9 +65,11 @@ export const fetchTournaments = async (
     }
 
     const query = params.toString();
-    const res = await fetch(`${BASE_URL}/tournaments${query ? `?${query}` : ''}`);
-    if (!res.ok) throw new Error('Failed to fetch tournaments');
-    const data = await res.json();
+    const data = await fetchApiJson(
+      `${BASE_URL}/tournaments${query ? `?${query}` : ''}`,
+      undefined,
+      'Failed to load tournaments.',
+    );
     setCachedTournaments(options, data);
     return data;
   } catch (err) {
@@ -88,14 +91,7 @@ export const prefetchHomeInitialData = async (city = 'Chennai') => {
 };
 
 export const fetchTournamentsById = async (id: number) => {
-    try {
-      const res = await fetch(`${BASE_URL}/tournaments/id/${id}`);
-      if (!res.ok) throw new Error('Failed to fetch tournament details');
-      return await res.json();
-    } catch (err) {
-      console.error('API Error:', err);
-      throw err;
-    }
+    return fetchApiJson(`${BASE_URL}/tournaments/id/${id}`, undefined, 'Failed to load tournament details.');
   };
 
 export const fetchTournamentsByContact = async (organiserContact: string) => {
@@ -104,7 +100,7 @@ export const fetchTournamentsByContact = async (organiserContact: string) => {
     if (res.status === 404) {
       return { tournaments: [] };
     }
-    if (!res.ok) throw new Error('Failed to fetch organizer tournaments');
+    if (!res.ok) return await throwApiResponseError(res, 'Failed to load organizer tournaments.');
     return await res.json();
   } catch (err) {
     console.error('API Error:', err);
@@ -113,91 +109,49 @@ export const fetchTournamentsByContact = async (organiserContact: string) => {
 };
 
 export const fetchGroundSuggestions = async (query: string) => {
-  try {
-    const res = await fetch(`${BASE_URL}/tournaments/ground-suggestions?q=${encodeURIComponent(query)}`);
-    if (!res.ok) throw new Error('Failed to fetch ground suggestions');
-    return await res.json();
-  } catch (err) {
-    console.error('API Error:', err);
-    throw err;
-  }
+  return fetchApiJson(
+    `${BASE_URL}/tournaments/ground-suggestions?q=${encodeURIComponent(query)}`,
+    undefined,
+    'Ground suggestions are unavailable.',
+  );
 };
 
 export const fetchTournamentMatches = async (tournamentId: number) => {
-  try {
-    const res = await fetch(`${BASE_URL}/tournaments/${tournamentId}/matches`);
-    if (!res.ok) {
-      return { matches: [] };
-    }
-    return await res.json();
-  } catch (err) {
-    if (!(err instanceof Error) || !err.message.includes('Failed to fetch tournament matches')) {
-      console.error('API Error:', err);
-    }
-    return { matches: [] };
-  }
+  return fetchApiJson(
+    `${BASE_URL}/tournaments/${tournamentId}/matches`,
+    undefined,
+    'Failed to load the match schedule.',
+  );
 };
 
 export const scheduleTournamentMatches = async (tournamentId: number, organiserContact: string) => {
-  try {
-    const res = await fetch(`${BASE_URL}/tournaments/${tournamentId}/matches/schedule`, {
+  return fetchApiJson(`${BASE_URL}/tournaments/${tournamentId}/matches/schedule`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ organiser_contact: organiserContact }),
-    });
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Failed to schedule tournament matches: ${errorText}`);
-    }
-    return await res.json();
-  } catch (err) {
-    console.error('API Error:', err);
-    throw err;
-  }
+    }, 'Failed to schedule tournament matches.');
 };
 
 export const resetTournamentMatches = async (tournamentId: number, organiserContact: string) => {
-  try {
-    const res = await fetch(`${BASE_URL}/tournaments/${tournamentId}/matches/reset`, {
+  return fetchApiJson(`${BASE_URL}/tournaments/${tournamentId}/matches/reset`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ organiser_contact: organiserContact }),
-    });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Failed to reset tournament matches: ${errorText}`);
-    }
-
-    return await res.json();
-  } catch (err) {
-    console.error('API Error:', err);
-    throw err;
-  }
+    }, 'Failed to reset tournament matches.');
 };
 
 export const startTournamentMatch = async (matchId: number, organiserContact: string) => {
-  try {
-    const res = await fetch(`${BASE_URL}/tournaments/matches/${matchId}/start`, {
+  return fetchApiJson(`${BASE_URL}/tournaments/matches/${matchId}/start`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ organiser_contact: organiserContact }),
-    });
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Failed to start match: ${errorText}`);
-    }
-    return await res.json();
-  } catch (err) {
-    console.error('API Error:', err);
-    throw err;
-  }
+    }, 'Failed to start the match.');
 };
 
 export const setTournamentMatchToss = async (
@@ -209,8 +163,7 @@ export const setTournamentMatchToss = async (
   tossWinnerTeamId?: number,
   tossDecision?: 'batting' | 'fielding',
 ) => {
-  try {
-    const res = await fetch(`${BASE_URL}/tournaments/matches/${matchId}/toss`, {
+  return fetchApiJson(`${BASE_URL}/tournaments/matches/${matchId}/toss`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -223,18 +176,7 @@ export const setTournamentMatchToss = async (
         toss_winner_team_id: tossWinnerTeamId,
         toss_decision: tossDecision,
       }),
-    });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Failed to save toss: ${errorText}`);
-    }
-
-    return await res.json();
-  } catch (err) {
-    console.error('API Error:', err);
-    throw err;
-  }
+    }, 'Failed to save the toss.');
 };
 
 export const completeTournamentMatch = async (
@@ -242,8 +184,7 @@ export const completeTournamentMatch = async (
   organiserContact: string,
   winnerTeamId: number,
 ) => {
-  try {
-    const res = await fetch(`${BASE_URL}/tournaments/matches/${matchId}/complete`, {
+  return fetchApiJson(`${BASE_URL}/tournaments/matches/${matchId}/complete`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -252,16 +193,7 @@ export const completeTournamentMatch = async (
         organiser_contact: organiserContact,
         winner_team_id: winnerTeamId,
       }),
-    });
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Failed to complete match: ${errorText}`);
-    }
-    return await res.json();
-  } catch (err) {
-    console.error('API Error:', err);
-    throw err;
-  }
+    }, 'Failed to complete the match.');
 };
 
 export const fetchMatchScorecard = async (matchId: number, viewerContact?: string) => {
@@ -269,12 +201,11 @@ export const fetchMatchScorecard = async (matchId: number, viewerContact?: strin
     const query = viewerContact
       ? `?viewer_contact=${encodeURIComponent(viewerContact)}`
       : '';
-    const res = await fetch(`${BASE_URL}/tournaments/matches/${matchId}/scorecard${query}`);
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Failed to fetch scorecard: ${errorText}`);
-    }
-    return await res.json();
+    return await fetchApiJson(
+      `${BASE_URL}/tournaments/matches/${matchId}/scorecard${query}`,
+      undefined,
+      'Failed to load the scorecard.',
+    );
   } catch (err) {
     console.error('API Error:', err);
     throw err;
@@ -286,8 +217,7 @@ export const setupMatchScorecard = async (
   organiserContact: string,
   oversLimit: number,
 ) => {
-  try {
-    const res = await fetch(`${BASE_URL}/tournaments/matches/${matchId}/scorecard/setup`, {
+  return fetchApiJson(`${BASE_URL}/tournaments/matches/${matchId}/scorecard/setup`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -296,18 +226,7 @@ export const setupMatchScorecard = async (
         organiser_contact: organiserContact,
         overs_limit: oversLimit,
       }),
-    });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Failed to setup scorecard: ${errorText}`);
-    }
-
-    return await res.json();
-  } catch (err) {
-    console.error('API Error:', err);
-    throw err;
-  }
+    }, 'Failed to set up the scorecard.');
 };
 
 export const addMatchBallEvent = async (
@@ -315,8 +234,7 @@ export const addMatchBallEvent = async (
   organiserContact: string,
   token: string,
 ) => {
-  try {
-    const res = await fetch(`${BASE_URL}/tournaments/matches/${matchId}/scorecard/events`, {
+  return fetchApiJson(`${BASE_URL}/tournaments/matches/${matchId}/scorecard/events`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -325,23 +243,11 @@ export const addMatchBallEvent = async (
         organiser_contact: organiserContact,
         token,
       }),
-    });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Failed to add ball event: ${errorText}`);
-    }
-
-    return await res.json();
-  } catch (err) {
-    console.error('API Error:', err);
-    throw err;
-  }
+    }, 'Failed to update the score.');
 };
 
 export const undoLastMatchBallEvent = async (matchId: number, organiserContact: string) => {
-  try {
-    const res = await fetch(`${BASE_URL}/tournaments/matches/${matchId}/scorecard/events/undo`, {
+  return fetchApiJson(`${BASE_URL}/tournaments/matches/${matchId}/scorecard/events/undo`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -349,18 +255,7 @@ export const undoLastMatchBallEvent = async (matchId: number, organiserContact: 
       body: JSON.stringify({
         organiser_contact: organiserContact,
       }),
-    });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Failed to undo last ball: ${errorText}`);
-    }
-
-    return await res.json();
-  } catch (err) {
-    console.error('API Error:', err);
-    throw err;
-  }
+    }, 'Failed to undo the last ball.');
 };
 
 export const replaceLastMatchBallEvent = async (
@@ -368,8 +263,7 @@ export const replaceLastMatchBallEvent = async (
   organiserContact: string,
   token: string,
 ) => {
-  try {
-    const res = await fetch(`${BASE_URL}/tournaments/matches/${matchId}/scorecard/events/last`, {
+  return fetchApiJson(`${BASE_URL}/tournaments/matches/${matchId}/scorecard/events/last`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -378,23 +272,11 @@ export const replaceLastMatchBallEvent = async (
         organiser_contact: organiserContact,
         token,
       }),
-    });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Failed to edit last ball: ${errorText}`);
-    }
-
-    return await res.json();
-  } catch (err) {
-    console.error('API Error:', err);
-    throw err;
-  }
+    }, 'Failed to edit the last ball.');
 };
 
 export const completeMatchScorecard = async (matchId: number, organiserContact: string) => {
-  try {
-    const res = await fetch(`${BASE_URL}/tournaments/matches/${matchId}/scorecard/complete`, {
+  return fetchApiJson(`${BASE_URL}/tournaments/matches/${matchId}/scorecard/complete`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -402,23 +284,11 @@ export const completeMatchScorecard = async (matchId: number, organiserContact: 
       body: JSON.stringify({
         organiser_contact: organiserContact,
       }),
-    });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Failed to complete scorecard: ${errorText}`);
-    }
-
-    return await res.json();
-  } catch (err) {
-    console.error('API Error:', err);
-    throw err;
-  }
+    }, 'Failed to complete the scorecard.');
 };
 
 export const resetMatchScorecard = async (matchId: number, organiserContact: string) => {
-  try {
-    const res = await fetch(`${BASE_URL}/tournaments/matches/${matchId}/scorecard`, {
+  return fetchApiJson(`${BASE_URL}/tournaments/matches/${matchId}/scorecard`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
@@ -426,65 +296,31 @@ export const resetMatchScorecard = async (matchId: number, organiserContact: str
       body: JSON.stringify({
         organiser_contact: organiserContact,
       }),
-    });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Failed to reset scorecard: ${errorText}`);
-    }
-
-    return await res.json();
-  } catch (err) {
-    console.error('API Error:', err);
-    throw err;
-  }
+    }, 'Failed to reset the scorecard.');
 };
 
-  export const createTournament = async (payload: any) => {
-    try {
-      const response = await fetch(`${BASE_URL}/tournaments/add`, {
+export const createTournament = async (payload: any) => {
+    return fetchApiJson(`${BASE_URL}/tournaments/add`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
-      });
-  
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Create Tournament failed: ${errorText}`);
-      }
-  
-      return await response.json();
-    } catch (err) {
-      console.error('API Error:', err);
-      throw err;
-    }
+      }, 'Failed to create the tournament.');
   };
 
 export const updateTournament = async (id: number, payload: any) => {
-  try {
-    const response = await fetch(`${BASE_URL}/tournaments/${id}`, {
+  return fetchApiJson(`${BASE_URL}/tournaments/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
-    });
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Update Tournament failed: ${errorText}`);
-    }
-    return await response.json();
-  } catch (err) {
-    console.error('API Error:', err);
-    throw err;
-  }
+    }, 'Failed to update the tournament.');
 };
 
 export const deleteTournamentById = async (id: number, requesterContact: string) => {
-  try {
-    const response = await fetch(`${BASE_URL}/tournaments/id/${id}`, {
+  return fetchApiJson(`${BASE_URL}/tournaments/id/${id}`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
@@ -492,16 +328,7 @@ export const deleteTournamentById = async (id: number, requesterContact: string)
       body: JSON.stringify({
         requester_contact: requesterContact,
       }),
-    });
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Delete Tournament failed: ${errorText}`);
-    }
-    return await response.json();
-  } catch (err) {
-    console.error('API Error:', err);
-    throw err;
-  }
+    }, 'Failed to delete the tournament.');
 };
 
 export default {

@@ -18,6 +18,7 @@ import Players from './components/players';
 import { insertPlayersBulk } from './service/playerService';
 import { assignPlayersToTeam } from './service/teamPlayerService';
 import { createTeam } from './service/teamsService';
+import { getApiErrorMessage } from '../utils/apiError';
 
 const PLAYER_ROLES = [
   { id: 'batsman', name: 'Batsman', icon: '🏏', color: '#22C55E' },
@@ -96,6 +97,7 @@ export default function CreateTeamScreen() {
     }
 
     setLoading(true);
+    let createdTeamId: string | number | null = null;
     try {
       const payload = {
         name: teamName,
@@ -106,6 +108,7 @@ export default function CreateTeamScreen() {
 
       const teamData = await createTeam(payload);
       const teamId = teamData?.team?.id;
+      createdTeamId = teamId || null;
 
       if (!teamId) {
         throw new Error('Team creation failed. No team ID returned.');
@@ -196,11 +199,17 @@ export default function CreateTeamScreen() {
         [{ text: 'OK', onPress: () => router.replace('/teams') }],
       );
     } catch (error) {
-      let errorMessage = 'Failed to create team. Please try again.';
-      if (typeof error === 'object' && error !== null && 'message' in error && typeof (error as any).message === 'string') {
-        errorMessage = (error as any).message;
-      }
-      Alert.alert('Error', errorMessage);
+      const fallback = createdTeamId
+        ? 'The team was created, but its players could not be added. Open Manage Teams and try adding the players again.'
+        : 'Failed to create the team. Please try again.';
+      const apiMessage = getApiErrorMessage(error, fallback);
+      const errorMessage = createdTeamId
+        ? `${apiMessage}\n\nThe team was created without all players. Open Manage Teams and try adding them again.`
+        : apiMessage;
+      Alert.alert(
+        createdTeamId ? 'Team Created Without Players' : 'Unable to Create Team',
+        errorMessage,
+      );
     } finally {
       setLoading(false);
     }
@@ -839,10 +848,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#22C55E',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 2px 4px rgba(0, 0, 0, 0.08)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 4 }),
     elevation: 2,
     paddingVertical: 4,
     position: 'absolute',
@@ -887,10 +895,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginHorizontal: 8,
     marginVertical: 4,
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 2,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 1px 2px rgba(37, 99, 235, 0.06)' }
+      : { shadowColor: '#2563EB', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 2 }),
     elevation: 1,
     transitionProperty: 'background-color',
     transitionDuration: '200ms',
@@ -899,8 +906,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#E0F2FE',
     borderColor: '#22C55E',
     borderWidth: 1,
-    shadowColor: '#22C55E',
-    shadowOpacity: 0.12,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 1px 2px rgba(34, 197, 94, 0.12)' }
+      : { shadowColor: '#22C55E', shadowOpacity: 0.12 }),
   },
   searchResultText: {
     fontSize: 16,

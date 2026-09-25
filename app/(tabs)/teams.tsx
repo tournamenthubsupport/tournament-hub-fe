@@ -5,6 +5,7 @@ import {
   Alert,
   FlatList,
   Image,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,6 +21,7 @@ import { assignPlayersToTeam, getPlayersForTeams, getTeamsForPlayer, leaveTeam, 
 import { deleteTeam, fetchTeams, fetchTeamsByMobile } from '../service/teamsService';
 import { fetchTournaments, fetchTournamentsByContact } from '../service/tournamentService';
 import { getTournamentsForTeams } from '../service/tournamentTeamsService';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 type Team = {
   id: number;
@@ -216,12 +218,13 @@ export default function TeamsScreen() {
           setJoinedTournaments([]);
         }
       }
-    } catch {
+    } catch (error) {
       setTeams([]);
       setCreatedTournaments([]);
       setJoinedTournaments([]);
       setTeamPlayersMap({});
       setTeamTournamentsMap({});
+      Alert.alert('Unable to Load Teams', getApiErrorMessage(error, 'Could not load your teams. Pull down to try again.'));
     } finally {
       setLoadingTeams(false);
     }
@@ -320,7 +323,7 @@ export default function TeamsScreen() {
       // Refresh teams and players after successful assignment
       refreshTeamsAndPlayers();
     } catch (error) {
-      Alert.alert('Error', 'Failed to add players. Please try again.');
+      Alert.alert('Unable to Add Players', getApiErrorMessage(error, 'Failed to add players. Please try again.'));
     } finally {
       setAddingPlayers(false);
     }
@@ -341,8 +344,8 @@ export default function TeamsScreen() {
               Alert.alert('Success', 'Team deleted successfully.');
               setSelectedTeam(null);
               await refreshTeamsAndPlayers();
-            } catch {
-              Alert.alert('Error', 'Failed to delete team. Please try again.');
+            } catch (error) {
+              Alert.alert('Unable to Delete Team', getApiErrorMessage(error, 'Failed to delete team. Please try again.'));
             }
           },
         },
@@ -454,9 +457,9 @@ export default function TeamsScreen() {
               alignItems: 'center',
               marginVertical: 8,
               padding: 16,
-              shadowColor: '#000',
-              shadowOpacity: 0.07,
-              shadowRadius: 8,
+              ...(Platform.OS === 'web'
+                ? { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.07)' }
+                : { shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 8 }),
               elevation: 2,
             }}
             onPress={() => setSelectedTeam(team)}
@@ -811,9 +814,9 @@ const styles = StyleSheet.create({
     marginVertical: 8,
     marginHorizontal: 4,
     padding: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.07,
-    shadowRadius: 8,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.07)' }
+      : { shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 8 }),
     elevation: 2,
   },
   teamContent: {
@@ -860,9 +863,9 @@ const styles = StyleSheet.create({
     margin: 8,
     paddingVertical: 18,
     paddingHorizontal: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.07,
-    shadowRadius: 8,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.07)' }
+      : { shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 8 }),
     elevation: 2,
     minWidth: 150,
     maxWidth: '48%',
@@ -903,9 +906,9 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 4px 8px rgba(0, 0, 0, 0.15)' }
+      : { shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8 }),
     elevation: 4,
     zIndex: 10,
   },
@@ -1119,13 +1122,9 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 1px 4px rgba(0, 0, 0, 0.05)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4 }),
     elevation: 1,
   },
   playerAvatar: {

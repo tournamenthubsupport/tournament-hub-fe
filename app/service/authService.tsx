@@ -1,5 +1,6 @@
 import axios from 'axios';
-import { API_BASE_URL } from '../constants/apiBaseUrl';
+import { API_BASE_URL } from '../../constants/apiBaseUrl';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 const BASE_URL = API_BASE_URL;
 
@@ -33,47 +34,22 @@ export type UserSupportRequest = {
   createdAt?: string;
 };
 
-export async function requestSignupOtp(phone: string) {
-  try {
-    const response = await axios.post(`${BASE_URL}/users/signup/request-otp`, {
-      phone,
-    });
-    return response.data;
-  } catch (error: any) {
-    return { success: false, error: error.response?.data?.error || error.message };
-  }
-}
-
-export async function verifySignupOtp(phone: string, otp: string) {
-  try {
-    const response = await axios.post(`${BASE_URL}/users/signup/verify-otp`, {
-      phone,
-      otp,
-    });
-    return response.data;
-  } catch (error: any) {
-    return { success: false, error: error.response?.data?.error || error.message };
-  }
-}
-
-export async function completeSignup(
+export async function createUser(
   name: string,
   phone: string,
   mpin: string,
   role: 'organizer' | 'player',
-  verificationToken: string,
 ) {
   try {
-    const response = await axios.post(`${BASE_URL}/users/signup/complete`, {
+    const response = await axios.post(`${BASE_URL}/users/signup`, {
       name,
       phone,
       mpin,
       role,
-      verificationToken,
     });
     return response.data;
   } catch (error: any) {
-    return { success: false, error: error.response?.data?.error || error.message };
+    return { success: false, error: getApiErrorMessage(error, 'Signup failed. Please try again.') };
   }
 }
 
@@ -86,7 +62,7 @@ export async function authenticateUser(phone: string, mpin: string) {
     });
     return response.data;
   } catch (error: any) {
-    return { success: false, error: error.response?.data?.error || error.message };
+    return { success: false, error: getApiErrorMessage(error, 'Sign in failed. Please try again.') };
   }
 }
 
@@ -102,7 +78,7 @@ export async function submitSupportRequest(payload: {
     const response = await axios.post(`${BASE_URL}/users/support`, payload);
     return response.data;
   } catch (error: any) {
-    return { success: false, error: error.response?.data?.error || error.message };
+    return { success: false, error: getApiErrorMessage(error, 'Failed to submit your support request.') };
   }
 }
 
@@ -111,7 +87,7 @@ export async function getAdminNotifications() {
     const response = await axios.get(`${BASE_URL}/users/admin/notifications`);
     return response.data;
   } catch (error: any) {
-    return { success: false, error: error.response?.data?.error || error.message };
+    return { success: false, error: getApiErrorMessage(error, 'Failed to load notifications.') };
   }
 }
 
@@ -120,7 +96,7 @@ export async function deleteAdminNotification(notificationId: number | string) {
     const response = await axios.delete(`${BASE_URL}/users/admin/notifications/${notificationId}`);
     return response.data;
   } catch (error: any) {
-    return { success: false, error: error.response?.data?.error || error.message };
+    return { success: false, error: getApiErrorMessage(error, 'Failed to delete the notification.') };
   }
 }
 
@@ -131,7 +107,7 @@ export async function replyToAdminNotification(notificationId: number | string, 
     });
     return response.data;
   } catch (error: any) {
-    return { success: false, error: error.response?.data?.error || error.message };
+    return { success: false, error: getApiErrorMessage(error, 'Failed to send the reply.') };
   }
 }
 
@@ -140,14 +116,12 @@ export async function getSupportRepliesForUser(phone: string | number) {
     const response = await axios.get(`${BASE_URL}/users/support/replies/${encodeURIComponent(String(phone))}`);
     return response.data;
   } catch (error: any) {
-    return { success: false, error: error.response?.data?.error || error.message };
+    return { success: false, error: getApiErrorMessage(error, 'Failed to load support replies.') };
   }
 }
 
 export default {
-  requestSignupOtp,
-  verifySignupOtp,
-  completeSignup,
+  createUser,
   authenticateUser,
   submitSupportRequest,
   getAdminNotifications,

@@ -1,9 +1,10 @@
 import { debounce } from 'lodash';
 import { Crown, Shield, Trash2 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { Player } from '../create-team'; // <-- Import Player type
 import { searchPlayers } from '../service/playerService';
+import { getApiErrorMessage } from '../../utils/apiError';
 // import { playerSearchStyles } from './players'; // adjust the import path if needed
 
 const minTeamMembers = 11;
@@ -37,6 +38,7 @@ const Players = ({
   const [selectedExistingPlayer, setSelectedExistingPlayer] = useState<Player | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<Player[]>([]);
+  const [searchError, setSearchError] = useState('');
   const [searchModalVisible, setSearchModalVisible] = useState(false);
 
   const normalizePlayerName = (value: string) =>
@@ -48,9 +50,10 @@ const Players = ({
     debounce(async (term, setResults) => {
       try {
         const results = await searchPlayers(term);
+        setSearchError('');
         setResults(results);
-      } catch {
-        setResults([]);
+      } catch (error) {
+        setSearchError(getApiErrorMessage(error, 'Player search is unavailable. Please try again.'));
       }
     }, 300)
   ).current;
@@ -69,6 +72,7 @@ const Players = ({
       debouncedSearchPlayers(searchTerm, setSearchResults);
     } else {
       setSearchResults([]);
+      setSearchError('');
     }
   }, [searchTerm]);
 
@@ -212,6 +216,9 @@ const Players = ({
                 maxLength={10}
                 editable={true}
               />
+              {!!searchError && (
+                <Text style={{ color: '#B91C1C', fontSize: 12, marginTop: 6 }}>{searchError}</Text>
+              )}
               {searchModalVisible && (
                 <View style={[playerSearchStyles.searchResultsContainer, { maxHeight: 300, width: '100%', zIndex: 2002, elevation: 10, position: 'absolute' }]}>
                   <ScrollView
@@ -363,10 +370,9 @@ export const playerSearchStyles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#22C55E',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 2px 4px rgba(0, 0, 0, 0.08)' }
+      : { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 4 }),
     elevation: 2,
     paddingVertical: 4,
     position: 'absolute',
@@ -384,18 +390,18 @@ export const playerSearchStyles = StyleSheet.create({
     borderRadius: 8,
     marginHorizontal: 8,
     marginVertical: 4,
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 2,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 1px 2px rgba(37, 99, 235, 0.06)' }
+      : { shadowColor: '#2563EB', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 2 }),
     elevation: 1,
   },
   searchResultItemSelected: {
     backgroundColor: '#E0F2FE',
     borderColor: '#22C55E',
     borderWidth: 1,
-    shadowColor: '#22C55E',
-    shadowOpacity: 0.12,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 1px 2px rgba(34, 197, 94, 0.12)' }
+      : { shadowColor: '#22C55E', shadowOpacity: 0.12 }),
   },
   searchResultText: {
     fontSize: 16,

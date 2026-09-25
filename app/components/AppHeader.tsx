@@ -15,6 +15,7 @@ import {
     getPendingRequestsByOrganizer,
     rejectTeamInTournament
 } from '../service/tournamentTeamsService';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 type HeaderProps = {
   displayName?: string;
@@ -57,6 +58,7 @@ export const Header: React.FC<HeaderProps> = ({
   const setUser = auth?.setUser;
   const [showModal, setShowModal] = useState(false);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [notificationError, setNotificationError] = useState('');
   const [notifications, setNotifications] = useState<JoinRequestNotification[]>([]);
   const [playerNotifications, setPlayerNotifications] = useState<PlayerNotification[]>([]);
   const [actionLoadingKey, setActionLoadingKey] = useState<string>('');
@@ -68,12 +70,13 @@ export const Header: React.FC<HeaderProps> = ({
     if (hasOrganizerNotifications && organiserContact) {
       try {
         setLoadingNotifications(true);
+        setNotificationError('');
         const data = await getPendingRequestsByOrganizer(organiserContact);
         setNotifications(Array.isArray(data) ? data : []);
         setPlayerNotifications([]);
       } catch (err) {
         console.error('Failed to load join-request notifications:', err);
-        setNotifications([]);
+        setNotificationError(getApiErrorMessage(err, 'Unable to load join requests.'));
       } finally {
         setLoadingNotifications(false);
       }
@@ -83,12 +86,13 @@ export const Header: React.FC<HeaderProps> = ({
     if (hasPlayerNotifications && playerPhone) {
       try {
         setLoadingNotifications(true);
+        setNotificationError('');
         const data = await getPlayerNotifications(playerPhone);
         setPlayerNotifications(Array.isArray(data?.notifications) ? data.notifications : []);
         setNotifications([]);
       } catch (err) {
         console.error('Failed to load player notifications:', err);
-        setPlayerNotifications([]);
+        setNotificationError(getApiErrorMessage(err, 'Unable to load notifications.'));
       } finally {
         setLoadingNotifications(false);
       }
@@ -124,7 +128,7 @@ export const Header: React.FC<HeaderProps> = ({
       Alert.alert('Approved', 'Team request has been approved.');
     } catch (err) {
       console.error('Approve request failed:', err);
-      Alert.alert('Error', 'Failed to approve request.');
+      Alert.alert('Unable to Approve Team', getApiErrorMessage(err, 'Failed to approve request.'));
     } finally {
       setActionLoadingKey('');
     }
@@ -142,7 +146,7 @@ export const Header: React.FC<HeaderProps> = ({
       Alert.alert('Rejected', 'Team request has been rejected.');
     } catch (err) {
       console.error('Reject request failed:', err);
-      Alert.alert('Error', 'Failed to reject request.');
+      Alert.alert('Unable to Reject Team', getApiErrorMessage(err, 'Failed to reject request.'));
     } finally {
       setActionLoadingKey('');
     }
@@ -166,7 +170,7 @@ export const Header: React.FC<HeaderProps> = ({
       Alert.alert('Left Team', `You have left ${item.teamName || 'the team'}.`);
     } catch (err) {
       console.error('Leave team failed:', err);
-      Alert.alert('Error', 'Failed to leave the team. Please try again.');
+      Alert.alert('Unable to Leave Team', getApiErrorMessage(err, 'Failed to leave the team. Please try again.'));
     } finally {
       setActionLoadingKey('');
     }
@@ -271,6 +275,13 @@ export const Header: React.FC<HeaderProps> = ({
             {loadingNotifications ? (
               <View style={{ paddingVertical: 12, alignItems: 'center' }}>
                 <ActivityIndicator size="small" color="#2563EB" />
+              </View>
+            ) : notificationError ? (
+              <View style={{ paddingVertical: 12, alignItems: 'center', gap: 10 }}>
+                <Text style={{ color: '#B91C1C', textAlign: 'center' }}>{notificationError}</Text>
+                <TouchableOpacity onPress={fetchPendingNotifications}>
+                  <Text style={{ color: '#16A34A', fontWeight: '600' }}>Try Again</Text>
+                </TouchableOpacity>
               </View>
             ) : hasOrganizerNotifications ? (
               notifications.length === 0 ? (

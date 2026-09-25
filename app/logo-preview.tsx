@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { CircleDot, Crown, Radio, Shield, Sparkles, Star, Trophy, Users } from 'lucide-react-native';
-import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function LogoPreviewScreen() {
@@ -196,10 +196,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     padding: 16,
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.06,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 12,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 6px 12px rgba(15, 23, 42, 0.06)' }
+      : { shadowColor: '#0F172A', shadowOpacity: 0.06, shadowOffset: { width: 0, height: 6 }, shadowRadius: 12 }),
     elevation: 3,
   },
   cardTitle: {
