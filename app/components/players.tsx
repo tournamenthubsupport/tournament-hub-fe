@@ -1,14 +1,24 @@
 import { debounce } from 'lodash';
-import { Crown, Shield, Trash2 } from 'lucide-react-native';
+import { Check, Crown, Shield, Trash2 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import type { Player } from '../create-team'; // <-- Import Player type
 import { searchPlayers } from '../service/playerService';
 import { getApiErrorMessage } from '../../utils/apiError';
 // import { playerSearchStyles } from './players'; // adjust the import path if needed
 
 const minTeamMembers = 11;
 const maxTeamMembers = 15;
+
+export interface Player {
+  id: string;
+  name: string;
+  mobile: string;
+  role: string;
+  isExists?: boolean;
+  isOrganizerSelf?: boolean;
+  isCaptain: boolean;
+  isViceCaptain: boolean;
+}
 
 interface PlayersProps {
   PLAYER_ROLES: any[];
@@ -17,6 +27,8 @@ interface PlayersProps {
   styles?: any;
   onSave?: (players: Player[]) => void; // <-- Add this
   saving?: boolean; // <-- Optional, for loading state
+  organizer?: { name: string; mobile: string };
+  existingPlayerMobiles?: string[];
 }
 
 const Players = ({
@@ -26,8 +38,17 @@ const Players = ({
   styles = {},
   onSave,
   saving = false,
+  organizer,
+  existingPlayerMobiles = [],
 }: PlayersProps) => {
   const [players, setPlayers] = useState<Player[]>(squad);
+  const organizerMobile = String(organizer?.mobile || '').replace(/\D/g, '').slice(-10);
+  const organizerAlreadyOnTeam = existingPlayerMobiles.some(
+    (mobile) => String(mobile || '').replace(/\D/g, '').slice(-10) === organizerMobile,
+  );
+  const [organizerAdded, setOrganizerAdded] = useState(
+    organizerAlreadyOnTeam || squad.some((player) => player.isOrganizerSelf),
+  );
   const [newPlayer, setNewPlayer] = useState<Omit<Player, 'id' | 'isExists'>>({
     name: '',
     mobile: '',
@@ -45,6 +66,11 @@ const Players = ({
     value.replace(/[^A-Za-z\s]/g, '').replace(/\s{2,}/g, ' ').slice(0, 40);
 
   const normalizeMobile = (value: string) => value.replace(/\D/g, '').slice(0, 10);
+  const normalizedExistingMobiles = new Set(existingPlayerMobiles.map(normalizeMobile).filter(Boolean));
+  const remainingSlots = Math.max(maxTeamMembers - normalizedExistingMobiles.size, 0);
+  const stagedMobileExists = (mobile: string) =>
+    players.some((player) => normalizeMobile(player.mobile) === normalizeMobile(mobile));
+  const isAlreadyOnTeam = (mobile: string) => normalizedExistingMobiles.has(normalizeMobile(mobile));
 
   const debouncedSearchPlayers = React.useRef(
     debounce(async (term, setResults) => {
@@ -77,12 +103,20 @@ const Players = ({
   }, [searchTerm]);
 
   useEffect(() => {
-    setSearchModalVisible(searchTerm.trim().length >= 3 && searchResults.length > 0);
+    const availableResults = searchResults.filter(
+      (player) => !isAlreadyOnTeam(player.mobile) && !stagedMobileExists(player.mobile),
+    );
+    setSearchModalVisible(searchTerm.trim().length >= 3 && availableResults.length > 0);
   }, [searchResults]);
 
   const selectExistingPlayerByMobile = (player: Player) => {
-    if (players.some((p) => p.mobile === player.mobile)) {
-      Alert.alert('Error', 'This player is already in the team');
+    if (isAlreadyOnTeam(player.mobile)) {
+      Alert.alert('Already on Team', 'This player is already a member of this team.');
+      setSearchModalVisible(false);
+      return;
+    }
+    if (stagedMobileExists(player.mobile)) {
+      Alert.alert('Already Selected', 'This player is already selected in the current batch.');
       return;
     }
 
@@ -114,14 +148,18 @@ const Players = ({
       Alert.alert('Error', 'Please enter a valid 10-digit mobile number');
       return;
     }
-    if (players.some(p => p.mobile === cleanedMobile)) {
-      Alert.alert('Error', 'A player with this mobile number already exists');
+    if (isAlreadyOnTeam(cleanedMobile)) {
+      Alert.alert('Already on Team', 'A player with this mobile number is already a member of this team.');
       return;
     }
-    if (players.length >= maxTeamMembers) {
+    if (stagedMobileExists(cleanedMobile)) {
+      Alert.alert('Already Selected', 'A player with this mobile number is already selected.');
+      return;
+    }
+    if (remainingSlots === 0 || players.length >= remainingSlots) {
       Alert.alert(
-        'Error',
-        `Players already max added (${maxTeamMembers}). Please delete some players and add again.`
+        'Squad Limit Reached',
+        `This team can have only ${maxTeamMembers} players. You can add ${remainingSlots} more player${remainingSlots === 1 ? '' : 's'}.`
       );
       return;
     }
@@ -147,7 +185,7 @@ const Players = ({
     setPlayers(players.map(p => ({
       ...p,
       isCaptain: p.id === playerId,
-      isViceCaptain: p.isCaptain ? false : p.isViceCaptain,
+      isViceCaptain: p.id === playerId ? false : p.isViceCaptain,
     })));
   };
 
@@ -157,9 +195,10 @@ const Players = ({
       Alert.alert('Error', 'Captain cannot be vice-captain');
       return;
     }
+    const shouldSelect = !player?.isViceCaptain;
     setPlayers(players.map(p => ({
       ...p,
-      isViceCaptain: p.id === playerId ? !p.isViceCaptain : p.isViceCaptain,
+      isViceCaptain: p.id === playerId ? shouldSelect : false,
     })));
   };
 
@@ -192,11 +231,80 @@ const Players = ({
     return `${year}${month}${day}${getSixDigitRandom()}${String(now.getMilliseconds()).padStart(3, '0')}`;
   };
 
+  const addOrganizerPlayer = () => {
+    const organizerName = normalizePlayerName(organizer?.name || '').trim();
+    const normalizedOrganizerMobile = normalizeMobile(organizer?.mobile || '');
+    if (!organizerName || !/^\d{10}$/.test(normalizedOrganizerMobile)) {
+      Alert.alert('Organizer details unavailable', 'A valid organizer name and mobile number are required.');
+      return;
+    }
+    if (players.some((player) => normalizeMobile(player.mobile) === normalizedOrganizerMobile)) {
+      Alert.alert('Already in squad', 'The organizer is already included as a player in this team.');
+      setOrganizerAdded(true);
+      return;
+    }
+    if (remainingSlots === 0 || players.length >= remainingSlots) {
+      Alert.alert('Squad Full', `This team already has ${maxTeamMembers} selected or saved players.`);
+      return;
+    }
+
+    setPlayers((currentPlayers) => [
+      ...currentPlayers,
+      {
+        id: generatePlayerId(),
+        name: organizerName,
+        mobile: normalizedOrganizerMobile,
+        role: 'allrounder',
+        isExists: false,
+        isOrganizerSelf: true,
+        isCaptain: false,
+        isViceCaptain: false,
+      },
+    ]);
+    setOrganizerAdded(true);
+  };
+
   return (
-    <View style={styles.stepContent}>
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} pointerEvents="box-none">
+    <View style={[styles.stepContent, playerSearchStyles.screenContainer]}>
+      <ScrollView
+        style={playerSearchStyles.screenScroll}
+        contentContainerStyle={playerSearchStyles.screenScrollContent}
+        showsVerticalScrollIndicator
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        nestedScrollEnabled
+      >
         <Text style={styles.stepTitle}>Add or Search Players</Text>
         <Text style={styles.stepDescription}>Enter mobile number to find existing player, or add a new player below.</Text>
+        <View style={playerSearchStyles.capacityBanner}>
+          <Text style={playerSearchStyles.capacityTitle}>
+            {normalizedExistingMobiles.size + players.length} / {maxTeamMembers} players
+          </Text>
+          <Text style={playerSearchStyles.capacityText}>
+            {Math.max(remainingSlots - players.length, 0)} slots remaining
+          </Text>
+        </View>
+        {!!organizer && !organizerAdded && !organizerAlreadyOnTeam && (
+        <View style={playerSearchStyles.organizerPlayerCard}>
+          <TouchableOpacity
+            style={playerSearchStyles.organizerCheckboxRow}
+            onPress={addOrganizerPlayer}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: false }}
+            accessibilityLabel="Add yourself as a player"
+          >
+            <View style={playerSearchStyles.checkbox}>
+              <Check size={16} color="transparent" />
+            </View>
+            <View style={playerSearchStyles.organizerCheckboxCopy}>
+              <Text style={playerSearchStyles.organizerCheckboxTitle}>Add yourself as a player</Text>
+              <Text style={playerSearchStyles.organizerCheckboxSubtitle}>
+                {organizer?.name || 'Organizer'} will be included in this squad.
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+        )}
         <View style={styles.playersSection}>
           <View style={[styles.inputGroup, styles.inputHalf, { position: 'relative', zIndex: 100 }]}>
             <Text style={styles.inputLabel}>Mobile Number</Text>
@@ -227,7 +335,7 @@ const Players = ({
                     keyboardShouldPersistTaps="handled"
                   >
                     {searchResults
-                      .filter(player => !players.some(p => p.mobile === player.mobile))
+                      .filter(player => !isAlreadyOnTeam(player.mobile) && !stagedMobileExists(player.mobile))
                       .map((player) => {
                         return (
                           <TouchableOpacity
@@ -244,8 +352,8 @@ const Players = ({
                           </TouchableOpacity>
                         );
                       })}
-                    {searchResults.filter(player => !players.some(p => p.mobile === player.mobile)).length === 0 && (
-                      <Text style={{ padding: 12, color: '#6B7280', textAlign: 'center' }}>No players found</Text>
+                    {searchResults.filter(player => !isAlreadyOnTeam(player.mobile) && !stagedMobileExists(player.mobile)).length === 0 && (
+                      <Text style={{ padding: 12, color: '#6B7280', textAlign: 'center' }}>No available players found</Text>
                     )}
                   </ScrollView>
                 </View>
@@ -291,16 +399,22 @@ const Players = ({
               ))}
             </ScrollView>
           </View>
-          <TouchableOpacity style={styles.addButton} onPress={addPlayer}>
+          <TouchableOpacity
+            style={[styles.addButton, players.length >= remainingSlots && playerSearchStyles.disabledAddButton]}
+            onPress={addPlayer}
+            disabled={players.length >= remainingSlots}
+          >
             <Text style={styles.addButtonText}>Add Player</Text>
           </TouchableOpacity>
           <View style={{ marginTop: 30 }}>
             {players.length > 0 && (
-              <Text style={styles.sectionTitle}>Squad ({players.length}/15)</Text>
+              <Text style={styles.sectionTitle}>
+                New Players ({players.length}/{remainingSlots})
+              </Text>
             )}
             {/* Use .map instead of FlatList */}
             {players.map((player) => (
-              <View key={player.id} style={styles.playerCard}>
+              <View key={player.id} style={playerSearchStyles.stagedPlayerCard}>
                 <View style={styles.playerInfo}>
                   <View style={styles.playerHeader}>
                     <Text style={styles.playerName}>{player.name}</Text>
@@ -323,24 +437,36 @@ const Players = ({
                     {PLAYER_ROLES.find(r => r.id === player.role)?.name} • {player.mobile}
                   </Text>
                 </View>
-                <View style={styles.playerActions}>
+                <View style={playerSearchStyles.playerActionGrid}>
                   <TouchableOpacity
-                    style={styles.actionButton}
+                    style={[
+                      playerSearchStyles.playerActionButton,
+                      player.isCaptain && playerSearchStyles.captainActionActive,
+                    ]}
                     onPress={() => setCaptain(player.id)}
+                    accessibilityLabel={`Set ${player.name} as captain`}
                   >
-                    <Crown size={16} color={player.isCaptain ? "#F59E0B" : "#9CA3AF"} />
+                    <Crown size={18} color={player.isCaptain ? '#92400E' : '#475569'} />
+                    <Text style={playerSearchStyles.playerActionText}>Captain</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.actionButton}
+                    style={[
+                      playerSearchStyles.playerActionButton,
+                      player.isViceCaptain && playerSearchStyles.viceActionActive,
+                    ]}
                     onPress={() => setViceCaptain(player.id)}
+                    accessibilityLabel={`Set ${player.name} as vice captain`}
                   >
-                    <Shield size={16} color={player.isViceCaptain ? "#3B82F6" : "#9CA3AF"} />
+                    <Shield size={18} color={player.isViceCaptain ? '#1D4ED8' : '#475569'} />
+                    <Text style={playerSearchStyles.playerActionText}>Vice Captain</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.actionButton}
+                    style={[playerSearchStyles.playerActionButton, playerSearchStyles.removeAction]}
                     onPress={() => removePlayer(player.id)}
+                    accessibilityLabel={`Remove ${player.name}`}
                   >
-                    <Trash2 size={16} color="#EF4444" />
+                    <Trash2 size={18} color="#B91C1C" />
+                    <Text style={[playerSearchStyles.playerActionText, playerSearchStyles.removeActionText]}>Remove</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -364,6 +490,175 @@ const Players = ({
 export default Players;
 
 export const playerSearchStyles = StyleSheet.create({
+  capacityBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  capacityTitle: {
+    color: '#1E3A8A',
+    fontSize: 13,
+    fontFamily: 'Inter-SemiBold',
+  },
+  capacityText: {
+    color: '#1D4ED8',
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+  },
+  disabledAddButton: {
+    backgroundColor: '#94A3B8',
+    opacity: 0.7,
+  },
+  screenContainer: {
+    flex: 1,
+    minHeight: 0,
+  },
+  screenScroll: {
+    flex: 1,
+  },
+  screenScrollContent: {
+    flexGrow: 1,
+    paddingBottom: 120,
+  },
+  stagedPlayerCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    marginBottom: 12,
+  },
+  playerActionGrid: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 14,
+  },
+  playerActionButton: {
+    minWidth: 104,
+    minHeight: 44,
+    flexGrow: 1,
+    flexBasis: '30%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  captainActionActive: {
+    borderColor: '#F59E0B',
+    backgroundColor: '#FEF3C7',
+  },
+  viceActionActive: {
+    borderColor: '#60A5FA',
+    backgroundColor: '#DBEAFE',
+  },
+  removeAction: {
+    borderColor: '#FECACA',
+    backgroundColor: '#FEF2F2',
+  },
+  playerActionText: {
+    color: '#334155',
+    fontSize: 12,
+    fontFamily: 'Inter-SemiBold',
+  },
+  removeActionText: {
+    color: '#B91C1C',
+  },
+  organizerPlayerCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 20,
+  },
+  organizerCheckboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: '#94A3B8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  checkboxChecked: {
+    backgroundColor: '#16A34A',
+    borderColor: '#16A34A',
+  },
+  organizerCheckboxCopy: {
+    flex: 1,
+  },
+  organizerCheckboxTitle: {
+    color: '#111827',
+    fontSize: 15,
+    fontFamily: 'Inter-SemiBold',
+  },
+  organizerCheckboxSubtitle: {
+    color: '#64748B',
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    marginTop: 2,
+  },
+  organizerRoles: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  organizerRoleLabel: {
+    color: '#374151',
+    fontSize: 13,
+    fontFamily: 'Inter-SemiBold',
+    marginBottom: 8,
+  },
+  organizerRoleOption: {
+    minWidth: 92,
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    marginRight: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  organizerRoleOptionActive: {
+    borderColor: '#16A34A',
+    backgroundColor: '#DCFCE7',
+  },
+  organizerRoleIcon: {
+    fontSize: 18,
+    marginBottom: 3,
+  },
+  organizerRoleText: {
+    color: '#475569',
+    fontSize: 11,
+    fontFamily: 'Inter-Medium',
+  },
+  organizerRoleTextActive: {
+    color: '#166534',
+    fontFamily: 'Inter-SemiBold',
+  },
   searchResultsContainer: {
     marginTop: 10,
     backgroundColor: '#fff',

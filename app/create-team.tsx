@@ -1,8 +1,115 @@
 import { router } from 'expo-router';
-import { ArrowLeft, Crown, Shield } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { ArrowLeft } from 'lucide-react-native';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  /*
+    <View style={styles.stepContent}>
+      <Text style={styles.stepTitle}>Create Your Team</Text>
+      <Text style={styles.stepDescription}>Add the team details now. Players can be added after creation.</Text>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Team Name</Text>
+        <TextInput
+          style={[styles.textInput, duplicateTeam && styles.duplicateInput]}
+          value={teamName}
+          onChangeText={(value) => {
+            setTeamName(value);
+            setShowTeamSuggestions(true);
+          }}
+          onFocus={() => setShowTeamSuggestions(true)}
+          placeholder="Enter your team name"
+          placeholderTextColor="#9CA3AF"
+        />
+        {showTeamSuggestions && teamNameSuggestions.length > 0 && (
+          <View style={styles.teamSuggestions}>
+            {teamNameSuggestions.map((team) => (
+              <TouchableOpacity
+                key={team.id}
+                style={styles.teamSuggestionItem}
+                onPress={() => {
+                  setTeamName(team.name);
+                  setShowTeamSuggestions(false);
+                }}
+              >
+                <TeamInitialsLogo name={team.name} size={34} />
+                <View style={styles.teamSuggestionCopy}>
+                  <Text style={styles.teamSuggestionName}>{team.name}</Text>
+                  <Text style={styles.teamSuggestionLocation}>
+                    {[team.location, team.city].filter(Boolean).join(', ')}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+        {!!duplicateTeam && (
+          <Text style={styles.duplicateText}>
+            This team already exists in the selected city and location. Choose another name.
+          </Text>
+        )}
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>State / Union Territory</Text>
+        <DropDownPicker
+          open={openState}
+          value={selectedState}
+          items={stateList}
+          setOpen={setOpenState}
+          setValue={setSelectedState}
+          setItems={setStateList}
+          searchable
+          listMode="MODAL"
+          searchPlaceholder="Search states"
+          placeholder="Select state"
+          style={styles.dropdownField}
+          dropDownContainerStyle={styles.dropdownMenu}
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>City</Text>
+        <DropDownPicker
+          open={openCity}
+          value={selectedCity}
+          items={cityList}
+          setOpen={setOpenCity}
+          setValue={setSelectedCity}
+          setItems={setCityList}
+          searchable
+          listMode="MODAL"
+          searchPlaceholder="Search cities"
+          placeholder={selectedState ? 'Select city' : 'Select state first'}
+          disabled={!selectedState}
+          style={styles.dropdownField}
+          dropDownContainerStyle={styles.dropdownMenu}
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Location / Area</Text>
+        <TextInput
+          style={styles.textInput}
+          value={teamLocation}
+          onChangeText={setTeamLocation}
+          placeholder="Enter your location name"
+          placeholderTextColor="#9CA3AF"
+        />
+      </View>
+
+      <View style={styles.teamPreview}>
+        <TeamInitialsLogo name={teamName} size={64} />
+        <Text style={styles.previewTitle}>{teamName || 'Your Team Name'}</Text>
+        <Text style={styles.previewSubtitle}>
+          {[teamLocation, selectedCity].filter(Boolean).join(', ') || 'Your Team Location'}
+        </Text>
+        <Text style={styles.previewMeta}>Created by: {organizerDisplayName}</Text>
+      </View>
+    </View>
+  );
+
+  */
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -12,55 +119,82 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import DropDownPicker from 'react-native-dropdown-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from './auth/auth-context';
-import Players from './components/players';
-import { insertPlayersBulk } from './service/playerService';
-import { assignPlayersToTeam } from './service/teamPlayerService';
-import { createTeam } from './service/teamsService';
+import TeamInitialsLogo from './components/TeamInitialsLogo';
+import { createTeam, fetchTeams } from './service/teamsService';
+import { getCityItemsForState, INDIAN_STATE_OPTIONS } from '../constants/indianLocations';
 import { getApiErrorMessage } from '../utils/apiError';
 
-const PLAYER_ROLES = [
-  { id: 'batsman', name: 'Batsman', icon: '🏏', color: '#22C55E' },
-  { id: 'bowler', name: 'Bowler', icon: '⚡', color: '#3B82F6' },
-  { id: 'allrounder', name: 'All-rounder', icon: '🌟', color: '#F59E0B' },
-  { id: 'wicketkeeper', name: 'Wicket Keeper', icon: '🥅', color: '#8B5CF6' },
-];
+const buildStateItems = () => INDIAN_STATE_OPTIONS.map((state) => ({
+  label: state,
+  value: state,
+}));
 
-export interface Player {
-  id: string;
+type ExistingTeam = {
+  id: number;
   name: string;
-  mobile: string;
-  role: string;
-  isExists?: boolean;
-  isCaptain: boolean;
-  isViceCaptain: boolean;
-}
+  state?: string;
+  city?: string;
+  location: string;
+};
 
 export default function CreateTeamScreen() {
-
   const auth = useAuth();
 
   if (!auth) {
-    console.error('Auth context is not available');
     return <Text>Loading auth context...</Text>;
   }
+
   const { user } = auth;
-  const userRole = (user?.role || 'player').toLowerCase();
+  const userRole = String(user?.role || 'player').toLowerCase();
   const canManage = userRole === 'organizer' || userRole === 'admin';
-  const currentUserMobile = (user?.phone  || '').toString();
-  const organizerDisplayName = (user?.name || '').trim() || 'Organizer';
-  const [currentStep, setCurrentStep] = useState(1);
+  const currentUserMobile = String(user?.phone || '');
+  const organizerDisplayName = String(user?.name || '').trim() || 'Organizer';
   const [teamName, setTeamName] = useState('');
+  const [selectedState, setSelectedState] = useState('Tamil Nadu');
+  const [selectedCity, setSelectedCity] = useState('Chennai');
   const [teamLocation, setTeamLocation] = useState('');
-  const [players, setPlayers] = useState<Player[]>([]);
-  const minTeamMembers = 5;
+  const [openState, setOpenState] = useState(false);
+  const [openCity, setOpenCity] = useState(false);
+  const [stateList, setStateList] = useState<{ label: string; value: string }[]>(buildStateItems());
+  const [cityList, setCityList] = useState<{ label: string; value: string }[]>(getCityItemsForState('Tamil Nadu'));
+  const [existingTeams, setExistingTeams] = useState<ExistingTeam[]>([]);
+  const [showTeamSuggestions, setShowTeamSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [selectedSport, setSelectedSport] = useState<number>(1);
+  const [selectedSport] = useState(1);
+  const submissionLockedRef = useRef(false);
+
+  const stripCountryCode = (number: string, code = '91') => {
+    const digitsOnly = String(number || '').replace(/\D/g, '');
+    return digitsOnly.startsWith(code) && digitsOnly.length > 10
+      ? digitsOnly.slice(code.length)
+      : digitsOnly;
+  };
 
   useEffect(() => {
-    setSelectedSport(1);
-  }, []);
+    const nextCities = getCityItemsForState(selectedState);
+    setCityList(nextCities);
+    if (!nextCities.some((city) => city.value === selectedCity)) {
+      setSelectedCity('');
+    }
+  }, [selectedState]);
+
+  useEffect(() => {
+    if (!canManage || !currentUserMobile) return;
+
+    const loadExistingTeams = async () => {
+      try {
+        const response = await fetchTeams();
+        setExistingTeams(Array.isArray(response?.teams) ? response.teams : []);
+      } catch {
+        setExistingTeams([]);
+      }
+    };
+
+    loadExistingTeams();
+  }, [canManage, currentUserMobile]);
 
   useEffect(() => {
     if (!canManage) {
@@ -69,44 +203,69 @@ export default function CreateTeamScreen() {
     }
   }, [canManage]);
 
-  const getPlayersByRole = (roleId: string) => {
-    return players.filter(p => p.role === roleId);
-  };
+  const normalizeComparison = (value: unknown) =>
+    String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const duplicateTeam = existingTeams.find((team) =>
+    normalizeComparison(team.name) === normalizeComparison(teamName) &&
+    normalizeComparison(team.city) === normalizeComparison(selectedCity) &&
+    normalizeComparison(team.location) === normalizeComparison(teamLocation)
+  );
+  const teamNameSuggestions = teamName.trim()
+    ? existingTeams
+        .filter((team) => normalizeComparison(team.name).includes(normalizeComparison(teamName)))
+        .slice(0, 5)
+    : [];
 
   const canProceed = () => {
-    return teamName.trim() && teamLocation.trim() && players.length >= minTeamMembers && 
-           players.some(p => p.isCaptain) && 
-           players.some(p => p.isViceCaptain);
+    return !!(
+      teamName.trim() &&
+      selectedState &&
+      selectedCity &&
+      teamLocation.trim() &&
+      !duplicateTeam
+    );
   };
-
-  const stripCountryCode = (number: string, code = "91"): string => {
-    const digitsOnly = String(number || '').replace(/\D/g, '');
-    return digitsOnly.startsWith(code) && digitsOnly.length > 10
-      ? digitsOnly.slice(code.length)
-      : digitsOnly;
-  };
-  
 
   const handleCreateTeam = async () => {
-    if (!canProceed()) {
+    if (submissionLockedRef.current) return;
+
+    if (duplicateTeam) {
       Alert.alert(
-        'Error',
-        `Please complete all requirements:\n• Team name\n• Minimum ${minTeamMembers} players\n• Select captain and vice-captain`
+        'Team Already Exists',
+        `${duplicateTeam.name} already exists in ${duplicateTeam.location}, ${duplicateTeam.city}. Please choose another team name.`,
       );
       return;
     }
 
+    if (!canProceed()) {
+      Alert.alert(
+        'Complete Team Details',
+        'Enter a team name, state, city, and location before creating the team.'
+      );
+      return;
+    }
+
+    submissionLockedRef.current = true;
     setLoading(true);
     let createdTeamId: string | number | null = null;
     try {
       const payload = {
         name: teamName,
+        state: selectedState,
+        city: selectedCity,
         location: teamLocation,
         sportId: selectedSport,
         createdBy: stripCountryCode(currentUserMobile),
       };
 
       const teamData = await createTeam(payload);
+      if (teamData?.alreadyExisted) {
+        Alert.alert(
+          'Team Already Exists',
+          `${teamData.team.name} already exists in ${teamData.team.location}, ${teamData.team.city}. Please choose another team name.`,
+        );
+        return;
+      }
       const teamId = teamData?.team?.id;
       createdTeamId = teamId || null;
 
@@ -114,125 +273,27 @@ export default function CreateTeamScreen() {
         throw new Error('Team creation failed. No team ID returned.');
       }
 
-      // Separate existing and new players
-      const existingPlayers: Player[] = [];
-      const newPlayers: Player[] = [];
-
-      for (const player of players) {
-        if (player.isExists) {
-          existingPlayers.push(player);
-        } else {
-          newPlayers.push(player);
-        }
-      }
-
-      let createdPlayersByMobile = new Map<string, any>();
-      let existingPlayersByMobile = new Map<string, any>();
-
-      if (newPlayers.length > 0) {
-        const bulkResponse = await insertPlayersBulk(
-          newPlayers.map((player) => ({
-            id: player.id,
-            name: player.name,
-            mobile: player.mobile,
-            role: player.role,
-          })),
-        );
-
-        const invalidPlayers = Array.isArray((bulkResponse as any)?.invalidPlayers)
-          ? (bulkResponse as any).invalidPlayers
-          : [];
-
-        if (invalidPlayers.length > 0) {
-          const errorPreview = invalidPlayers
-            .slice(0, 3)
-            .map((item: any) => `${item.mobile || 'unknown'} (${item.reason || 'invalid'})`)
-            .join(', ');
-          Alert.alert('Player Validation Error', `Please fix invalid players: ${errorPreview}`);
-          return;
-        }
-
-        const createdPlayers = Array.isArray((bulkResponse as any)?.createdPlayers)
-          ? (bulkResponse as any).createdPlayers
-          : [];
-        const existingPlayersFromBulk = Array.isArray((bulkResponse as any)?.existingPlayers)
-          ? (bulkResponse as any).existingPlayers
-          : [];
-
-        createdPlayersByMobile = new Map(
-          createdPlayers.map((player: any) => [String(player.mobile || ''), player]),
-        );
-        existingPlayersByMobile = new Map(
-          existingPlayersFromBulk.map((player: any) => [String(player.mobile || ''), player]),
-        );
-      }
-
-      const mergedNewPlayers = newPlayers.map((player) => {
-        const mobileKey = String(player.mobile || '');
-        const matched = createdPlayersByMobile.get(mobileKey) || existingPlayersByMobile.get(mobileKey);
-
-        if (!matched) {
-          throw new Error(`Unable to process player ${player.name} (${player.mobile}). Please try again.`);
-        }
-
-        return {
-          ...matched,
-          isCaptain: !!player.isCaptain,
-          isViceCaptain: !!player.isViceCaptain,
-        };
+      router.replace({
+        pathname: '/teams',
+        params: { teamId: String(teamId) },
       });
-
-      // Combine IDs of existing and processed new players
-      const allPlayers = [...existingPlayers, ...mergedNewPlayers];
-
-      const playerAssignments = allPlayers.map(p => ({
-        playerId: p.id,
-        is_captain: p.isCaptain,
-        is_vicecaptain: p.isViceCaptain,
-      }));
-
-      await assignPlayersToTeam(String(teamId), playerAssignments);
-
-      Alert.alert(
-        'Team Created!',
-        `${teamName} has been created successfully with ${players.length} players.`,
-        [{ text: 'OK', onPress: () => router.replace('/teams') }],
-      );
+      Alert.alert('Team Created!', `${teamName} was created. Add players from the team details screen.`);
     } catch (error) {
-      const fallback = createdTeamId
-        ? 'The team was created, but its players could not be added. Open Manage Teams and try adding the players again.'
-        : 'Failed to create the team. Please try again.';
-      const apiMessage = getApiErrorMessage(error, fallback);
-      const errorMessage = createdTeamId
-        ? `${apiMessage}\n\nThe team was created without all players. Open Manage Teams and try adding them again.`
-        : apiMessage;
-      Alert.alert(
-        createdTeamId ? 'Team Created Without Players' : 'Unable to Create Team',
-        errorMessage,
-      );
+      Alert.alert('Unable to Create Team', getApiErrorMessage(error, 'Failed to create the team. Please try again.'));
     } finally {
-      setLoading(false);
+      if (!createdTeamId) {
+        submissionLockedRef.current = false;
+        setLoading(false);
+      }
     }
   };
   
-  const renderStep1 = () => (
-    <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>Create Your Team</Text>
-      <Text style={styles.stepDescription}>Let's start by naming your team</Text>
-
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Team Name</Text>
-        <TextInput
-          style={styles.textInput}
-          value={teamName}
-          onChangeText={setTeamName}
-          placeholder="Enter your team name"
-          placeholderTextColor="#9CA3AF"
+  /*
         />
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Location</Text>
+        <Text style={styles.inputLabel}>Location / Area</Text>
         <TextInput
           style={styles.textInput}
           value={teamLocation}
@@ -244,8 +305,11 @@ export default function CreateTeamScreen() {
 
 
       <View style={styles.teamPreview}>
+        <TeamInitialsLogo name={teamName} size={64} />
         <Text style={styles.previewTitle}>{teamName || 'Your Team Name'}</Text>
-        <Text style={styles.previewSubtitle}>{teamLocation || 'Your Team Location'}</Text>
+        <Text style={styles.previewSubtitle}>
+          {[teamLocation, selectedCity].filter(Boolean).join(', ') || 'Your Team Location'}
+        </Text>
         <Text style={styles.previewMeta}>Created by: {organizerDisplayName}</Text>
       </View>
     </View>
@@ -261,6 +325,10 @@ export default function CreateTeamScreen() {
       })))}
       squad={players}
       styles={styles}
+      organizer={{
+        name: organizerDisplayName,
+        mobile: stripCountryCode(currentUserMobile),
+      }}
     />
   );
 
@@ -270,7 +338,8 @@ export default function CreateTeamScreen() {
       <Text style={styles.stepDescription}>Review your team before creating</Text>
 
       <View style={styles.summaryCard}>
-        <Text style={styles.summaryTeamName}>🏏 {teamName}</Text>
+        <TeamInitialsLogo name={teamName} size={58} />
+        <Text style={styles.summaryTeamName}>{teamName}</Text>
         <Text style={styles.summaryPlayers}>{players.length} Players</Text>
         
         <View style={styles.roleDistribution}>
@@ -326,6 +395,105 @@ export default function CreateTeamScreen() {
     </View>
   );
 
+  */
+
+  const renderTeamForm = () => (
+    <View style={styles.stepContent}>
+      <Text style={styles.stepTitle}>Create Your Team</Text>
+      <Text style={styles.stepDescription}>Add the team details now. Players can be added after creation.</Text>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Team Name</Text>
+        <TextInput
+          style={[styles.textInput, duplicateTeam && styles.duplicateInput]}
+          value={teamName}
+          onChangeText={(value) => {
+            setTeamName(value);
+            setShowTeamSuggestions(true);
+          }}
+          onFocus={() => setShowTeamSuggestions(true)}
+          placeholder="Enter your team name"
+          placeholderTextColor="#9CA3AF"
+        />
+        {showTeamSuggestions && teamNameSuggestions.length > 0 && (
+          <View style={styles.teamSuggestions}>
+            {teamNameSuggestions.map((team) => (
+              <TouchableOpacity
+                key={team.id}
+                style={styles.teamSuggestionItem}
+                onPress={() => {
+                  setTeamName(team.name);
+                  setShowTeamSuggestions(false);
+                }}
+              >
+                <TeamInitialsLogo name={team.name} size={34} />
+                <View style={styles.teamSuggestionCopy}>
+                  <Text style={styles.teamSuggestionName}>{team.name}</Text>
+                  <Text style={styles.teamSuggestionLocation}>
+                    {[team.location, team.city].filter(Boolean).join(', ')}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+        {!!duplicateTeam && (
+          <Text style={styles.duplicateText}>
+            This team already exists in the selected city and location. Choose another name.
+          </Text>
+        )}
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>State / Union Territory</Text>
+        <DropDownPicker
+          open={openState}
+          value={selectedState}
+          items={stateList}
+          setOpen={setOpenState}
+          setValue={setSelectedState}
+          setItems={setStateList}
+          searchable
+          listMode="MODAL"
+          searchPlaceholder="Search states"
+          placeholder="Select state"
+          style={styles.dropdownField}
+          dropDownContainerStyle={styles.dropdownMenu}
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>City</Text>
+        <DropDownPicker
+          open={openCity}
+          value={selectedCity}
+          items={cityList}
+          setOpen={setOpenCity}
+          setValue={setSelectedCity}
+          setItems={setCityList}
+          searchable
+          listMode="MODAL"
+          searchPlaceholder="Search cities"
+          placeholder={selectedState ? 'Select city' : 'Select state first'}
+          disabled={!selectedState}
+          style={styles.dropdownField}
+          dropDownContainerStyle={styles.dropdownMenu}
+        />
+      </View>
+
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Location / Area</Text>
+        <TextInput
+          style={styles.textInput}
+          value={teamLocation}
+          onChangeText={setTeamLocation}
+          placeholder="Enter your location name"
+          placeholderTextColor="#9CA3AF"
+        />
+      </View>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView 
@@ -342,69 +510,38 @@ export default function CreateTeamScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.stepIndicator}>
-          {[1, 2, 3].map((step) => (
-            <View key={step} style={styles.stepRow}>
-              <View style={[
-                styles.stepCircle,
-                currentStep >= step && styles.stepCircleActive
-              ]}>
-                <Text style={[
-                  styles.stepNumber,
-                  currentStep >= step && styles.stepNumberActive
-                ]}>{step}</Text>
-              </View>
-              {step < 3 && (
-                <View style={[
-                  styles.stepLine,
-                  currentStep > step && styles.stepLineActive
-                ]} />
-              )}
-            </View>
-          ))}
-        </View>
-
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {currentStep === 1 && renderStep1()}
-          {currentStep === 2 && renderStep2()}
-          {currentStep === 3 && renderStep3()}
-        </ScrollView>
-
-
-        <View style={styles.footer}>
-          {currentStep > 1 && (
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.formScrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {renderTeamForm()}
+          <View style={styles.footer}>
             <TouchableOpacity
-              style={styles.backStepButton}
-              onPress={() => setCurrentStep(currentStep - 1)}
-            >
-              <Text style={styles.backStepText}>Back</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={[
-              styles.nextButton,
-              (currentStep === 1 && (!teamName.trim() || !teamLocation.trim())) && styles.nextButtonDisabled,
-              (currentStep === 3 && !canProceed()) && styles.nextButtonDisabled,
-              loading && styles.nextButtonDisabled
-            ]}
-            onPress={() => {
-              if (currentStep < 3) {
-                setCurrentStep(currentStep + 1);
-              } else {
+              style={[
+                styles.nextButton,
+                !canProceed() && styles.nextButtonDisabled,
+                loading && styles.nextButtonDisabled
+              ]}
+              onPress={() => {
+                if (duplicateTeam) {
+                  Alert.alert(
+                    'Team Already Exists',
+                    `${duplicateTeam.name} already exists in ${duplicateTeam.location}, ${duplicateTeam.city}. Please choose another team name.`,
+                  );
+                  return;
+                }
                 handleCreateTeam();
-              }
-            }}
-            disabled={
-              (currentStep === 1 && (!teamName.trim() || !teamLocation.trim())) ||
-              (currentStep === 3 && !canProceed()) ||
-              loading
-            }
-          >
-            <Text style={styles.nextButtonText}>
-              {currentStep === 3 ? (loading ? 'Creating...' : 'Create Team') : 'Next'}
-            </Text>
-          </TouchableOpacity>
-        </View>
+              }}
+              disabled={!canProceed() || loading}
+            >
+              <Text style={styles.nextButtonText}>
+                {loading ? 'Creating...' : 'Create Team'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -499,6 +636,9 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
+  formScrollContent: {
+    paddingBottom: 24,
+  },
   stepContent: {
     padding: 20,
   },
@@ -541,6 +681,62 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     color: '#111827',
   },
+  duplicateInput: {
+    borderColor: '#DC2626',
+  },
+  duplicateText: {
+    marginTop: 6,
+    color: '#B91C1C',
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    lineHeight: 17,
+  },
+  teamSuggestions: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  teamSuggestionItem: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E2E8F0',
+  },
+  teamSuggestionCopy: {
+    flex: 1,
+  },
+  teamSuggestionName: {
+    color: '#0F172A',
+    fontSize: 14,
+    fontFamily: 'Inter-SemiBold',
+  },
+  teamSuggestionLocation: {
+    marginTop: 2,
+    color: '#64748B',
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+  },
+  dropdownField: {
+    minHeight: 50,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+  },
+  dropdownMenu: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+  },
   teamPreview: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -554,6 +750,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontFamily: 'Poppins-Bold',
     color: '#111827',
+    marginTop: 12,
     marginBottom: 4,
   },
   previewSubtitle: {
@@ -801,11 +998,9 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    gap: 12,
+    paddingHorizontal: 20,
+    paddingTop: 0,
+    paddingBottom: 12,
   },
   backStepButton: {
     flex: 1,

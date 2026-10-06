@@ -36,6 +36,12 @@
       "expo-secure-store",
       "expo-font",
       "expo-web-browser",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Tournament Hub to use your location to find tournaments in your city."
+        }
+      ],
       "@react-native-community/datetimepicker"
     ],
     "experiments": {

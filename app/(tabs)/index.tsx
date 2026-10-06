@@ -1,7 +1,7 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
-import { Calendar, IndianRupee, MapPin, Search, SlidersHorizontal, Trophy, Users, X } from 'lucide-react-native';
+import { ArrowRight, Calendar, IndianRupee, MapPin, Search, SlidersHorizontal, Trophy, Users, X } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -15,8 +15,57 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/auth-context';
 import { Header } from '../components/AppHeader';
+import TeamInitialsLogo from '../components/TeamInitialsLogo';
 import { fetchMatchScorecard, fetchTournamentMatches, fetchTournaments } from '../service/tournamentService';
+import { INDIAN_CITY_OPTIONS } from '../../constants/indianLocations';
 import { getApiErrorMessage } from '../../utils/apiError';
+
+const CITY_OPTIONS = [...new Set(Object.values(INDIAN_CITY_OPTIONS).flat())];
+
+const isWithinChennaiMetro = (latitude: number, longitude: number) =>
+  latitude >= 12.8 &&
+  latitude <= 13.25 &&
+  longitude >= 80.05 &&
+  longitude <= 80.35;
+
+const reverseGeocodeCity = async (latitude: number, longitude: number) => {
+  if (isWithinChennaiMetro(latitude, longitude)) {
+    return 'Chennai';
+  }
+
+  if (Platform.OS !== 'web') {
+    const places = await Location.reverseGeocodeAsync({ latitude, longitude });
+    const place = places[0];
+    return String(
+      place?.city || place?.district || place?.subregion || place?.region || '',
+    ).trim();
+  }
+
+  const query = new URLSearchParams({
+    format: 'jsonv2',
+    lat: String(latitude),
+    lon: String(longitude),
+    zoom: '10',
+    addressdetails: '1',
+  });
+  const response = await fetch(`https://nominatim.openstreetmap.org/reverse?${query}`);
+  if (!response.ok) {
+    throw new Error('Web reverse geocoding failed.');
+  }
+
+  const result = await response.json();
+  const address = result?.address || {};
+  return String(
+    address.city ||
+    address.town ||
+    address.village ||
+    address.municipality ||
+    address.county ||
+    address.state_district ||
+    address.state ||
+    '',
+  ).trim();
+};
 
 type LiveMatchSummary = {
   matchId: number;
@@ -46,89 +95,70 @@ export default function HomeScreen() {
   const [loadError, setLoadError] = useState('');
   const [filterDate, setFilterDate] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [filterLocation, setFilterLocation] = useState('Chennai');
+  const [filterLocation, setFilterLocation] = useState('');
   const [filterStatus, setFilterStatus] = useState<'upcoming' | 'active' | 'completed'>('upcoming');
   const [showFilters, setShowFilters] = useState(false);
+  const [showCitySuggestions, setShowCitySuggestions] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [cityScope, setCityScope] = useState('Chennai');
-  const [citySource, setCitySource] = useState<'default' | 'saved' | 'gps' | 'manual'>('default');
+  const [cityScope, setCityScope] = useState('');
+  const [isResolvingDefaultCity, setIsResolvingDefaultCity] = useState(true);
+  const [locationError, setLocationError] = useState('');
   const [liveScoresByTournament, setLiveScoresByTournament] = useState<Record<number, LiveMatchSummary[]>>({});
   const tournamentRequestId = useRef(0);
-
-  const resolveCityFromDeviceLocation = async () => {
-    try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== 'granted') {
-        return;
-      }
-
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-
-      const places = await Location.reverseGeocodeAsync({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-      });
-
-      const primary = Array.isArray(places) ? places[0] : null;
-      const detectedCity = String(
-        primary?.city || primary?.district || primary?.subregion || primary?.region || '',
-      ).trim();
-
-      if (!detectedCity) {
-        return;
-      }
-
-      setCityScope(detectedCity);
-      setFilterLocation(detectedCity);
-      setCitySource('gps');
-
-      if (Platform.OS === 'web') {
-        try {
-          window.localStorage.setItem('th_current_city', detectedCity);
-        } catch {
-          // Ignore storage failures.
-        }
-      }
-    } catch {
-      // Ignore GPS/reverse geocode failures and keep manual fallback.
-    }
-  };
+  const hasManualCitySelection = useRef(false);
 
   useEffect(() => {
-    if (Platform.OS === 'web') {
-      try {
-        const savedCity = window.localStorage.getItem('th_current_city') || '';
-        if (savedCity.trim()) {
-          setCityScope(savedCity.trim());
-          setFilterLocation(savedCity.trim());
-          setCitySource('saved');
-          return;
-        }
-      } catch {
-        // Ignore localStorage read failures.
-      }
-    }
+    let isMounted = true;
 
-    resolveCityFromDeviceLocation();
+    const resolveDefaultCity = async () => {
+      let detectedCity = '';
+
+      try {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (permission.status === 'granted') {
+          const position = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          detectedCity = await reverseGeocodeCity(
+            position.coords.latitude,
+            position.coords.longitude,
+          );
+        } else {
+          setLocationError('Allow location access in your browser to use your current city.');
+        }
+      } catch (error) {
+        console.warn('Unable to detect the current city:', error);
+        setLocationError('Current city could not be detected. Search for a city below.');
+      }
+
+      if (!isMounted) return;
+      if (!hasManualCitySelection.current) {
+        setFilterLocation(detectedCity);
+        setCityScope(detectedCity);
+      }
+      setIsResolvingDefaultCity(false);
+    };
+
+    resolveDefaultCity();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const applyCityFilter = () => {
     const nextCity = (filterLocation || '').trim();
+    hasManualCitySelection.current = true;
     setCityScope(nextCity);
-    setCitySource('manual');
-    if (Platform.OS === 'web') {
-      try {
-        if (nextCity) {
-          window.localStorage.setItem('th_current_city', nextCity);
-        } else {
-          window.localStorage.removeItem('th_current_city');
-        }
-      } catch {
-        // Ignore localStorage write failures.
-      }
-    }
+    setLocationError('');
+    setShowCitySuggestions(false);
+  };
+
+  const selectCity = (city: string) => {
+    hasManualCitySelection.current = true;
+    setFilterLocation(city);
+    setCityScope(city);
+    setLocationError('');
+    setShowCitySuggestions(false);
   };
 
   const clearSearchFilter = () => setSearchQuery('');
@@ -136,16 +166,10 @@ export default function HomeScreen() {
   const clearDateFilter = () => setFilterDate(null);
 
   const clearCityFilter = () => {
+    hasManualCitySelection.current = true;
     setFilterLocation('');
     setCityScope('');
-    setCitySource('manual');
-    if (Platform.OS === 'web') {
-      try {
-        window.localStorage.removeItem('th_current_city');
-      } catch {
-        // Ignore localStorage cleanup failures.
-      }
-    }
+    setShowCitySuggestions(false);
   };
 
   const clearAllFilters = () => {
@@ -305,8 +329,9 @@ export default function HomeScreen() {
 
   useFocusEffect(
     React.useCallback(() => {
+      if (isResolvingDefaultCity) return;
       loadTournaments(true);
-    }, [filterStatus, cityScope])
+    }, [filterStatus, cityScope, isResolvingDefaultCity])
   );
 
   useFocusEffect(
@@ -372,6 +397,16 @@ export default function HomeScreen() {
   const todayIST = new Date();
   todayIST.setHours(todayIST.getHours() + 5, todayIST.getMinutes() + 30, 0, 0);
   todayIST.setHours(0, 0, 0, 0);
+  const citySearch = filterLocation.trim().toLowerCase();
+  const citySuggestions = CITY_OPTIONS
+    .filter((city) => !citySearch || city.toLowerCase().includes(citySearch))
+    .sort((cityA, cityB) => {
+      const cityAStartsWithSearch = cityA.toLowerCase().startsWith(citySearch);
+      const cityBStartsWithSearch = cityB.toLowerCase().startsWith(citySearch);
+      if (cityAStartsWithSearch !== cityBStartsWithSearch) return cityAStartsWithSearch ? -1 : 1;
+      return cityA.localeCompare(cityB);
+    })
+    .slice(0, 8);
   const filteredTournaments = tournaments
   .filter(tournament => {
     const sportName = String(tournament?.sport_name || '').toLowerCase();
@@ -404,7 +439,7 @@ export default function HomeScreen() {
       <>
      <ScrollView
   showsVerticalScrollIndicator={false}
-    contentContainerStyle={[styles.scrollContent, { paddingBottom: 230 + insets.bottom }]}
+    contentContainerStyle={[styles.scrollContent, { paddingBottom: 110 + insets.bottom }]}
   refreshControl={
     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
   }
@@ -456,13 +491,39 @@ export default function HomeScreen() {
                 <MapPin size={18} color="#16A34A" />
                 <TextInput
                   style={styles.filterInput}
-                  placeholder="Filter by city"
+                  placeholder="Search cities"
                   value={filterLocation}
-                  onChangeText={setFilterLocation}
-                  onBlur={applyCityFilter}
+                  onChangeText={(value) => {
+                    setFilterLocation(value);
+                    setShowCitySuggestions(true);
+                  }}
+                  onFocus={() => setShowCitySuggestions(true)}
+                  onSubmitEditing={applyCityFilter}
+                  selectTextOnFocus
                   placeholderTextColor="#9CA3AF"
                 />
               </View>
+
+              {!!locationError && (
+                <Text style={styles.locationErrorText}>{locationError}</Text>
+              )}
+
+              {showCitySuggestions && citySuggestions.length > 0 && (
+                <View style={styles.citySuggestionsList}>
+                  {citySuggestions.map((city) => (
+                    <TouchableOpacity
+                      key={city}
+                      style={styles.citySuggestionItem}
+                      onPress={() => selectCity(city)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Use ${city} city filter`}
+                    >
+                      <MapPin size={15} color="#64748B" />
+                      <Text style={styles.citySuggestionText}>{city}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
 
               <TouchableOpacity style={styles.applyFilterButton} onPress={applyCityFilter}>
                 <Text style={styles.applyFilterText}>Apply Location</Text>
@@ -506,6 +567,7 @@ export default function HomeScreen() {
                 )}
                 {!!cityScope && (
                   <View style={styles.appliedFilterChip}>
+                    <MapPin size={14} color="#166534" />
                     <Text style={styles.appliedFilterText}>City: {cityScope}</Text>
                     <TouchableOpacity onPress={clearCityFilter} accessibilityLabel="Clear city filter">
                       <X size={14} color="#166534" />
@@ -602,7 +664,10 @@ export default function HomeScreen() {
             return (
               <TouchableOpacity
                 key={tournament.id}
-                style={styles.simpleCard}
+                style={[
+                  styles.simpleCard,
+                  statusLabel === 'Active' && styles.simpleCardActive,
+                ]}
                 onPress={() =>
                   router.push({
                     pathname: '/tournament-details',
@@ -610,20 +675,14 @@ export default function HomeScreen() {
                   })
                 }
               >
-                {/* Header */}
+                <View style={[
+                  styles.cardAccent,
+                  statusLabel === 'Active' && styles.cardAccentActive,
+                  statusLabel === 'Completed' && styles.cardAccentCompleted,
+                ]} />
                 <View style={styles.cardHeading}>
                   <View style={styles.headingLeft}>
-                    <View style={styles.titleWithBatBall}>
-                      <Text style={styles.cardTitle}>{tournament.name}</Text>
-                    </View>
-                    <Text
-                      style={[styles.cardSubtitle, styles.cardSubtitleStrong]}
-                      numberOfLines={1}
-                      ellipsizeMode="tail"
-                    >
-                      📅 {renderDateRange(tournament.start_date, tournament.end_date)}
-                    </Text>
-                    <Text style={styles.cardSubtitle}>📍 {tournament.location}</Text>
+                    <Text style={styles.cardTitle} numberOfLines={2}>{tournament.name}</Text>
                   </View>
                   <Text style={[
                     styles.statusBadge,
@@ -635,65 +694,62 @@ export default function HomeScreen() {
                   </Text>
                 </View>
 
-                {/* Main Stats */}
+                <View style={styles.cardMetaBlock}>
+                  <View style={styles.cardMetaRow}>
+                    <Calendar size={15} color="#15803D" />
+                    <Text style={styles.cardDateText} numberOfLines={1}>
+                      {renderDateRange(tournament.start_date, tournament.end_date)}
+                    </Text>
+                  </View>
+                  <View style={styles.cardMetaRow}>
+                    <MapPin size={15} color="#64748B" />
+                    <Text style={styles.cardLocationText} numberOfLines={1} ellipsizeMode="tail">
+                      {tournament.location}
+                    </Text>
+                  </View>
+                </View>
+
                 <View style={styles.mainStatsRow}>
-                    <View style={styles.mainStatBox}>
-                      <Text style={styles.mainStatEmoji}>👥</Text>
-                      <Text style={styles.mainStatNumber}>{teamsDisplay}</Text>
-                      <Text style={styles.mainStatLabel}>Teams</Text>
-                    </View>
-                  <View style={styles.statsVerticalDivider} />
-                    <View style={styles.mainStatBox}>
-                      <Text style={styles.mainStatEmoji}>🏆</Text>
-                      <Text style={styles.mainStatNumberGreen}>{formatPrizeAmount(tournament.prize)}</Text>
-                      <Text style={styles.mainStatLabel}>Prize</Text>
-                    </View>
-                  <View style={styles.statsVerticalDivider} />
-                    <View style={styles.mainStatBox}>
-                      <IndianRupee size={18} color="#F97316" />
-                      <Text style={styles.mainStatNumberOrange}>{tournament.entry_fees}</Text>
-                      <Text style={styles.mainStatLabel}>Entry</Text>
-                    </View>
-                </View>
-
-                {/* Details Listed Down */}
-                <View style={styles.detailsWithArtRow}>
-                  <View style={styles.detailsList}>
-                    <Text style={styles.detailItem}>🔥 Match: {tournament.match_type || 'N/A'}</Text>
-                    <Text style={styles.detailItem}>💨 Ball: {tournament.ball_type || 'N/A'}</Text>
-                    <Text style={styles.detailItem}>🏟️  Ground: {tournament.ground || 'N/A'}</Text>
-                    <Text style={styles.detailItem}>{getTournamentTypeIcon(tournament.tournament_type)} Ground Type: {tournament.tournament_type || 'N/A'}</Text>
+                  <View style={styles.mainStatBox}>
+                    <Users size={17} color="#2563EB" />
+                    <Text style={styles.mainStatNumber}>{teamsDisplay}</Text>
+                    <Text style={styles.mainStatLabel}>Teams</Text>
                   </View>
-                  <View style={styles.cricketVisualWrap}>
-                    <View style={styles.cricketVisualBgCircle} />
-
-                    <View style={styles.cricketStumpsRow}>
-                      <View style={styles.cricketStump} />
-                      <View style={styles.cricketStump} />
-                      <View style={styles.cricketStump} />
-                    </View>
-                    <View style={styles.cricketBailsRow}>
-                      <View style={styles.cricketBail} />
-                      <View style={styles.cricketBail} />
-                    </View>
-
-                    <View style={styles.cricketBat}>
-                      <View style={styles.cricketBatHandle} />
-                      <View style={styles.cricketBatBlade} />
-                    </View>
-
-                    <View style={styles.cricketBall}>
-                      <View style={styles.cricketBallSeam} />
-                    </View>
-
-                    <View style={styles.cricketTrailOne} />
-                    <View style={styles.cricketTrailTwo} />
-
+                  <View style={styles.statsVerticalDivider} />
+                  <View style={styles.mainStatBox}>
+                    <Trophy size={17} color="#16A34A" />
+                    <Text style={styles.mainStatNumberGreen}>{formatPrizeAmount(tournament.prize)}</Text>
+                    <Text style={styles.mainStatLabel}>Prize</Text>
+                  </View>
+                  <View style={styles.statsVerticalDivider} />
+                  <View style={styles.mainStatBox}>
+                    <IndianRupee size={17} color="#EA580C" />
+                    <Text style={styles.mainStatNumberOrange}>{tournament.entry_fees}</Text>
+                    <Text style={styles.mainStatLabel}>Entry</Text>
                   </View>
                 </View>
 
-                {statusLabel === 'Upcoming' && (
-                  <View style={styles.spotsLeftRow}>
+                <View style={styles.formatChipsRow}>
+                  <View style={styles.formatChip} accessibilityLabel={`Match format ${tournament.match_type || 'Not available'}`}>
+                    <Text style={styles.formatChipIcon}>🏏</Text>
+                    <Text style={styles.formatChipText}>{tournament.match_type || 'N/A'}</Text>
+                  </View>
+                  <View style={styles.formatChip} accessibilityLabel={`Ball type ${tournament.ball_type || 'Not available'}`}>
+                    <Text style={styles.formatChipIcon}>●</Text>
+                    <Text style={styles.formatChipText}>{tournament.ball_type || 'N/A'}</Text>
+                  </View>
+                  <View style={[styles.formatChip, styles.formatChipWide]} accessibilityLabel={`Ground ${tournament.ground || 'Not available'}`}>
+                    <Text style={styles.formatChipIcon}>🏟️</Text>
+                    <Text style={styles.formatChipText} numberOfLines={1}>{tournament.ground || 'N/A'}</Text>
+                  </View>
+                  <View style={styles.formatChip} accessibilityLabel={`Ground type ${tournament.tournament_type || 'Not available'}`}>
+                    <Text style={styles.formatChipIcon}>{getTournamentTypeIcon(tournament.tournament_type)}</Text>
+                    <Text style={styles.formatChipText}>{tournament.tournament_type || 'N/A'}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardFooter}>
+                  {statusLabel === 'Upcoming' ? (
                     <Text
                       style={[
                         styles.spotsLeftText,
@@ -702,8 +758,14 @@ export default function HomeScreen() {
                     >
                       {spotsLeftLabel}
                     </Text>
+                  ) : <View />}
+                  <View style={styles.viewDetailsAction}>
+                    <Text style={styles.viewDetailsText}>View details</Text>
+                    <View style={styles.viewDetailsIcon}>
+                      <ArrowRight size={14} color="#FFFFFF" />
+                    </View>
                   </View>
-                )}
+                </View>
 
                 {filterStatus === 'active' && liveMatches.length > 0 && (
                   <View style={styles.liveScoreSection}>
@@ -718,7 +780,10 @@ export default function HomeScreen() {
                           <Text style={styles.liveScoreBadge}>LIVE</Text>
                           <Text style={styles.liveOversText}>Ov {liveMatch.overs}</Text>
                         </View>
-                        <Text style={styles.liveBattingTeam}>{liveMatch.battingTeamName}</Text>
+                        <View style={styles.liveTeamRow}>
+                          <TeamInitialsLogo name={liveMatch.battingTeamName} size={34} />
+                          <Text style={styles.liveBattingTeam}>{liveMatch.battingTeamName}</Text>
+                        </View>
                         <Text style={styles.liveRunsText}>{liveMatch.runs}/{liveMatch.wickets}</Text>
                         <Text style={styles.liveBowlingText}>Bowling: {liveMatch.bowlingTeamName}</Text>
                           </>
@@ -734,39 +799,6 @@ export default function HomeScreen() {
         </View>
 
       </ScrollView>
-              {canManage && (
-                <View style={[styles.quickActionsFixedWrapper, { bottom: Math.max(insets.bottom, 12) }]}>
-                  <View style={styles.quickActionsSection}>
-                    <Text style={styles.quickActionsHeader}>Quick Actions</Text>
-                    <View style={styles.quickActions}>
-                      <TouchableOpacity
-                        style={styles.quickActionCard}
-                        onPress={() => router.push('/create-team')}
-                      >
-                        <View style={styles.quickActionIcon}>
-                          <Users size={16} color="#16A34A" />
-                        </View>
-                        <View style={styles.quickActionTextGroup}>
-                          <Text style={styles.quickActionTitle}>Create Team</Text>
-                          <Text style={styles.quickActionSubtitle}>Build squad</Text>
-                        </View>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.quickActionCard, styles.quickActionCardSecondary]}
-                        onPress={() => router.push('/create-tournament')}
-                      >
-                        <View style={[styles.quickActionIcon, styles.quickActionIconSecondary]}>
-                          <Trophy size={16} color="#2563EB" />
-                        </View>
-                        <View style={styles.quickActionTextGroup}>
-                          <Text style={styles.quickActionTitle}>Create Tournament</Text>
-                          <Text style={styles.quickActionSubtitle}>Host event</Text>
-                        </View>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-              )}
               </>
        )}
     </SafeAreaView>
@@ -868,6 +900,34 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     fontSize: 14,
   },
+  citySuggestionsList: {
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  citySuggestionItem: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E2E8F0',
+  },
+  citySuggestionText: {
+    color: '#0F172A',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  locationErrorText: {
+    marginTop: 6,
+    color: '#B45309',
+    fontSize: 12,
+    lineHeight: 17,
+  },
   applyFilterButton: {
     marginTop: 10,
     alignSelf: 'flex-end',
@@ -952,7 +1012,13 @@ const styles = StyleSheet.create({
   statusChipText: { color: '#374151', fontWeight: '500', fontSize: 13 },
   statusChipTextActive: { color: '#fff', fontWeight: '700' },
 
-  tournamentsSection: { paddingHorizontal: 16, paddingBottom: 20 },
+  tournamentsSection: {
+    width: '100%',
+    maxWidth: 760,
+    alignSelf: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+  },
   sectionTitle: { fontSize: 18, fontWeight: '600', color: '#111827', marginBottom: 12 },
   noResultsText: { textAlign: 'center', color: '#888', fontStyle: 'italic', marginVertical: 20 },
   errorState: { alignItems: 'center', paddingVertical: 20, gap: 10 },
@@ -962,19 +1028,40 @@ const styles = StyleSheet.create({
 
   simpleCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    marginBottom: 12,
+    borderRadius: 12,
+    marginBottom: 16,
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.08)',
-    elevation: 3,
+    paddingTop: 18,
+    paddingBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+    boxShadow: '0px 6px 16px rgba(15, 23, 42, 0.09)',
+    elevation: 4,
+  },
+  simpleCardActive: {
+    borderColor: '#86EFAC',
+  },
+  cardAccent: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 5,
+    backgroundColor: '#F59E0B',
+  },
+  cardAccentActive: {
+    backgroundColor: '#16A34A',
+  },
+  cardAccentCompleted: {
+    backgroundColor: '#94A3B8',
   },
 
   cardHeading: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 14,
+    marginBottom: 10,
     gap: 10,
   },
 
@@ -983,31 +1070,43 @@ const styles = StyleSheet.create({
   },
 
   cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#0F172A',
     textTransform: 'capitalize',
+    lineHeight: 25,
   },
-
-  cardSubtitle: {
-    fontSize: 14,
-    fontWeight: '300',
-    color: '#6B7280',
-    marginTop: 4,
-    textTransform: 'capitalize',
+  cardMetaBlock: {
+    gap: 7,
+    marginBottom: 14,
   },
-  cardSubtitleStrong: {
+  cardMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cardDateText: {
+    flex: 1,
+    color: '#334155',
+    fontSize: 13,
     fontWeight: '700',
-    color: '#374151',
+  },
+  cardLocationText: {
+    flex: 1,
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '500',
+    textTransform: 'capitalize',
   },
 
   statusBadge: {
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 10,
-    fontSize: 12,
+    borderRadius: 7,
+    fontSize: 11,
     fontWeight: '700',
     overflow: 'hidden',
+    textTransform: 'uppercase',
   },
 
   statusBadgeUpcoming: { backgroundColor: '#FEF3C7', color: '#92400E' },
@@ -1018,18 +1117,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    backgroundColor: '#F8FAFB',
-    borderRadius: 12,
-    paddingVertical: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    paddingVertical: 11,
+    marginBottom: 13,
   },
 
   mainStatBox: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: 67,
   },
 
     mainStatEmoji: {
@@ -1064,31 +1162,51 @@ const styles = StyleSheet.create({
 
   statsVerticalDivider: {
     width: 1,
-    height: 40,
-    backgroundColor: '#D1D5DB',
+    height: 42,
+    backgroundColor: '#E2E8F0',
   },
-
-  detailsWithArtRow: {
+  formatChipsRow: {
     flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: 10,
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
   },
-
-  detailsList: {
-    flex: 1,
+  formatChip: {
+    maxWidth: '100%',
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
-    marginBottom: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#DDE7F1',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
   },
-
-  detailItem: {
-    fontSize: 14,
-    color: '#6B7280',
-    lineHeight: 20,
+  formatChipWide: {
+    flexShrink: 1,
   },
-
-  spotsLeftRow: {
-    marginTop: 2,
-    alignItems: 'flex-end',
+  formatChipIcon: {
+    fontSize: 13,
+    color: '#DC2626',
+  },
+  formatChipText: {
+    flexShrink: 1,
+    color: '#334155',
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  cardFooter: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#EEF2F6',
+    paddingTop: 12,
   },
 
   spotsLeftText: {
@@ -1096,8 +1214,27 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 999,
+    borderRadius: 7,
     overflow: 'hidden',
+  },
+  viewDetailsAction: {
+    marginLeft: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  viewDetailsText: {
+    color: '#166534',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  viewDetailsIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#16A34A',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   liveScoreSection: {
@@ -1142,9 +1279,15 @@ const styles = StyleSheet.create({
     color: '#7F1D1D',
   },
   liveBattingTeam: {
+    flex: 1,
     fontSize: 13,
     fontWeight: '700',
     color: '#991B1B',
+  },
+  liveTeamRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   liveRunsText: {
     marginTop: 2,
@@ -1319,80 +1462,11 @@ const styles = StyleSheet.create({
       fontSize: 18,
     },
 
-  quickActionsSection: { marginBottom: 0, paddingHorizontal: 16, paddingBottom: 6 },
-  quickActionsHeader: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 8,
-    letterSpacing: 0.2,
-  },
-  quickActionsFixedWrapper: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    backgroundColor: '#FFFFFF',
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    boxShadow: '0px -2px 6px rgba(0, 0, 0, 0.08)',
-    elevation: 12,
-  },
-  quickActions: { flexDirection: 'row', gap: 12 },
-  quickActionCard: {
-    flex: 1,
-    backgroundColor: '#86EFAC',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#22C55E',
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  quickActionCardSecondary: {
-    backgroundColor: '#BFDBFE',
-    borderColor: '#3B82F6',
-  },
-  quickActionIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#ECFDF5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  quickActionIconSecondary: {
-    backgroundColor: '#DBEAFE',
-  },
-  quickActionTextGroup: {
-    flex: 1,
-  },
-  quickActionTitle: { fontSize: 12, fontWeight: '700', color: '#0F172A', marginBottom: 1 },
-  quickActionSubtitle: { fontSize: 10, color: '#6B7280' },
-  quickActionCta: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#16A34A',
-    marginLeft: 6,
-  },
-  quickActionCtaSecondary: {
-    color: '#2563EB',
-  },
   statusChipsRowOuter: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     marginHorizontal: 16,
     marginBottom: 8,
     marginTop: 0,
-  },
-  citySourceText: {
-    marginHorizontal: 16,
-    marginBottom: 8,
-    color: '#64748B',
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'capitalize',
   },
 });

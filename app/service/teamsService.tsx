@@ -39,7 +39,14 @@ export const fetchTeamsByMobileAndSport = async (mobile: string, sportId: string
   );
 };
 
-export const createTeam = async (teamData: { name: string; location: string; sportId: number; createdBy: string }) => {
+export const createTeam = async (teamData: {
+  name: string;
+  state: string;
+  city: string;
+  location: string;
+  sportId: number;
+  createdBy: string;
+}) => {
   return fetchApiJson(`${BASE_URL}/teams/add`, {
       method: 'POST',
       headers: {
@@ -49,7 +56,10 @@ export const createTeam = async (teamData: { name: string; location: string; spo
     }, 'Failed to create the team.');
 };
 
-export const updateTeam = async (id: string, teamData: { name: string }) => {
+export const updateTeam = async (
+  id: string,
+  teamData: { name: string; state: string; city: string; location: string },
+) => {
   return fetchApiJson(`${BASE_URL}/teams/${id}`, {
       method: 'PUT',
       headers: {

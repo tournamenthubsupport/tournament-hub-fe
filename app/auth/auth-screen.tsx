@@ -254,12 +254,27 @@ const AuthScreen = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.header}>
-            <Image source={require('../../assets/images/hub/logo-name-new.png')} style={styles.logoClean} />
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={[
+            styles.scrollContent,
+            isSignUpMode && styles.signupScrollContent,
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          contentInsetAdjustmentBehavior="automatic"
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+        >
+          <View style={[styles.header, isSignUpMode && styles.signupHeader]}>
+            <Image
+              source={require('../../assets/images/hub/logo-name-new-transparent.png')}
+              style={[styles.logoClean, isSignUpMode && styles.signupLogo]}
+              resizeMode="contain"
+            />
             <Text style={styles.title}>{isSignUpMode ? 'Create Account' : 'Sign In'}</Text>
             <Text style={styles.subtitle}>
-              {isSignUpMode ? 'Join the community today' : 'Access Your Hub'}
+              {isSignUpMode ? 'Create your profile and get into the game' : 'Access Your Hub'}
             </Text>
           </View>
           <View style={styles.form}>
@@ -434,15 +449,40 @@ const AuthScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFF' },
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
   keyboardView: { flex: 1 },
-  scrollContent: { flexGrow: 1, justifyContent: 'center', padding: 20 },
-  header: { alignItems: 'center', marginBottom: 32 },
+  scrollView: { flex: 1 },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 32,
+  },
+  signupScrollContent: {
+    justifyContent: 'flex-start',
+    paddingTop: 4,
+    paddingBottom: 48,
+  },
+  header: {
+    width: '100%',
+    maxWidth: 480,
+    alignItems: 'center',
+    marginBottom: 22,
+  },
+  signupHeader: { marginBottom: 18 },
   logo: { fontSize: 48, marginBottom: 16 },
-  title: { fontSize: 28, fontFamily: 'Poppins-Bold', color: '#111827', marginBottom: 8 },
-  subtitle: { fontSize: 16, fontFamily: 'Inter-Regular', color: '#6B7280', textAlign: 'center' },
-  form: { marginBottom: 24 },
-  inputGroup: { marginBottom: 16 },
+  title: { fontSize: 27, fontFamily: 'Poppins-Bold', color: '#0F172A', marginBottom: 4 },
+  subtitle: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  form: { width: '100%', maxWidth: 480, marginBottom: 18 },
+  inputGroup: { marginBottom: 14 },
   inputLabel: { fontSize: 16, fontFamily: 'Inter-SemiBold', color: '#111827', marginBottom: 8 },
   inputContainer: {
     flexDirection: 'row',
@@ -480,8 +520,11 @@ const styles = StyleSheet.create({
   },
   pinInputWrapperError: { borderColor: '#EF4444' },
   pinDigitBox: {
-    width: 42,
-    height: 48,
+    flex: 1,
+    maxWidth: 42,
+    minWidth: 34,
+    height: 44,
+    marginHorizontal: 2,
     borderWidth: 1,
     borderColor: '#D1D5DB',
     borderRadius: 10,
@@ -546,20 +589,30 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   signupButton: {
-    backgroundColor: '#22C55E',
-    borderRadius: 12,
-    paddingVertical: 16,
+    backgroundColor: '#16A34A',
+    borderRadius: 10,
+    minHeight: 50,
+    justifyContent: 'center',
+    paddingVertical: 14,
     alignItems: 'center',
-    marginBottom: 24,
-    marginTop: 8,
+    marginBottom: 18,
+    marginTop: 6,
   },
   signupButtonDisabled: { backgroundColor: '#9CA3AF' },
   signupButtonText: { fontSize: 16, fontFamily: 'Inter-SemiBold', color: '#FFFFFF' },
-  footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
-  footerText: { fontSize: 16, fontFamily: 'Inter-Regular', color: '#6B7280' },
-  loginLink: { fontSize: 16, fontFamily: 'Inter-SemiBold', color: '#22C55E' },
+  footer: {
+    width: '100%',
+    maxWidth: 480,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  footerText: { fontSize: 14, fontFamily: 'Inter-Regular', color: '#64748B' },
+  loginLink: { fontSize: 14, fontFamily: 'Inter-SemiBold', color: '#15803D' },
   message: { fontSize: 14, fontFamily: 'Inter-Regular', color: '#22C55E', marginTop: 4 },
-  logoClean: { backgroundColor: 'transparent', width: 280, height: 200 , position: 'relative' }
+  logoClean: { backgroundColor: 'transparent', width: '100%', maxWidth: 320, height: 182 },
+  signupLogo: { width: 210, maxWidth: 210, height: 120 },
 });
 
 export default AuthScreen;

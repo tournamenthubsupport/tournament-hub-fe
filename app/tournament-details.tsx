@@ -34,6 +34,7 @@ import {
 import DropDownPicker from 'react-native-dropdown-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from './auth/auth-context';
+import TeamInitialsLogo from './components/TeamInitialsLogo';
 import { getCityItemsForState, INDIAN_STATE_OPTIONS } from '../constants/indianLocations';
 import { fetchSportById } from './service/sportsService';
 import { getPlayersForTeams } from './service/teamPlayerService';
@@ -175,6 +176,8 @@ export default function TournamentDetailsScreen() {
   const [approvedStatus, setApprovedStatus] = useState<{ [teamId: number]: boolean }>({});
   const [isEditing, setIsEditing] = useState(false);
   const [editTournament, setEditTournament] = useState<any>(null);
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
   const [openState, setOpenState] = useState(false);
   const [openCity, setOpenCity] = useState(false);
   const [selectedState, setSelectedState] = useState('');
@@ -368,6 +371,38 @@ export default function TournamentDetailsScreen() {
     setEditTournament((prev: any) => (prev ? { ...prev, city: nextCity } : prev));
   }, []);
 
+  const updateStartDate = useCallback((selectedDate: Date) => {
+    setEditTournament((prev: any) => {
+      if (!prev) return prev;
+
+      const startDate = formatDateForApi(selectedDate);
+      const currentEnd = prev.end_date ? new Date(prev.end_date) : null;
+      if (currentEnd && selectedDate.getTime() > currentEnd.getTime()) {
+        return { ...prev, start_date: startDate, end_date: startDate };
+      }
+
+      return { ...prev, start_date: startDate };
+    });
+  }, []);
+
+  const updateEndDate = useCallback((selectedDate: Date) => {
+    setEditTournament((prev: any) => {
+      if (!prev) return prev;
+
+      const currentStart = prev.start_date ? new Date(prev.start_date) : null;
+      const endDate = currentStart && selectedDate.getTime() < currentStart.getTime()
+        ? formatDateForApi(currentStart)
+        : formatDateForApi(selectedDate);
+      return { ...prev, end_date: endDate };
+    });
+  }, []);
+
+  const closeEditTournament = () => {
+    setShowStartDatePicker(false);
+    setShowEndDatePicker(false);
+    setIsEditing(false);
+  };
+
   const handleSaveTournamentEdits = async () => {
     try {
       if (!editTournament?.id) {
@@ -398,7 +433,7 @@ export default function TournamentDetailsScreen() {
       setTournament(payload);
       setSelectedState(resolvedState);
       setSelectedCity(resolvedCity);
-      setIsEditing(false);
+      closeEditTournament();
       setIsLocationChanged(false);
       Alert.alert('Success', 'Tournament details updated!');
     } catch (err) {
@@ -903,16 +938,23 @@ export default function TournamentDetailsScreen() {
       .filter(Boolean);
 
     const query = parts.length > 0 ? parts.join(', ') : (tournament?.name || 'Tournament location');
-    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+    const encodedQuery = encodeURIComponent(query);
+    const webMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedQuery}`;
+    const mapsUrl = Platform.OS === 'android'
+      ? `geo:0,0?q=${encodedQuery}`
+      : webMapsUrl;
 
     try {
-      const supported = await Linking.canOpenURL(url);
-      if (!supported) {
-        Alert.alert('Map unavailable', 'Unable to open maps on this device.');
-        return;
-      }
-      await Linking.openURL(url);
+      await Linking.openURL(mapsUrl);
     } catch {
+      if (mapsUrl !== webMapsUrl) {
+        try {
+          await Linking.openURL(webMapsUrl);
+          return;
+        } catch {
+          // Show the shared error below.
+        }
+      }
       Alert.alert('Map unavailable', 'Unable to open the map right now. Please try again.');
     }
   };
@@ -1060,6 +1102,8 @@ export default function TournamentDetailsScreen() {
                   <TouchableOpacity
                     style={styles.heroEditChip}
                     onPress={() => {
+                      setShowStartDatePicker(false);
+                      setShowEndDatePicker(false);
                       setEditTournament(tournament);
                       setSelectedState(tournament?.state || '');
                       setSelectedCity(tournament?.city || '');
@@ -1195,7 +1239,7 @@ export default function TournamentDetailsScreen() {
 
                 {!isTournamentCompleted && (
                   <View style={styles.actionButtons}>
-                    {!isTournamentFullApproved && (
+                    {isPrivileged && !isTournamentFullApproved && (
                       <TouchableOpacity
                         onPress={handleJoin}
                         style={styles.joinButton}
@@ -1298,9 +1342,15 @@ export default function TournamentDetailsScreen() {
                             return (
                               <View key={match.id} style={styles.matchCard}>
                                 <View style={styles.matchTeamsRow}>
-                                  <Text style={styles.matchTeamText}>{match.homeTeamName || 'TBD'}</Text>
+                                  <View style={styles.matchTeamIdentity}>
+                                    <TeamInitialsLogo name={match.homeTeamName} size={32} />
+                                    <Text style={styles.matchTeamText}>{match.homeTeamName || 'TBD'}</Text>
+                                  </View>
                                   <Text style={styles.matchVsText}>vs</Text>
-                                  <Text style={styles.matchTeamText}>{match.awayTeamName || 'TBD'}</Text>
+                                  <View style={[styles.matchTeamIdentity, styles.matchTeamIdentityAway]}>
+                                    <TeamInitialsLogo name={match.awayTeamName} size={32} />
+                                    <Text style={[styles.matchTeamText, styles.matchTeamTextAway]}>{match.awayTeamName || 'TBD'}</Text>
+                                  </View>
                                 </View>
                                 <Text style={styles.matchStatusText}>Status: {match.status}</Text>
                                 {match.battingTeamName && match.fieldingTeamName ? (
@@ -1352,6 +1402,7 @@ export default function TournamentDetailsScreen() {
                     <Text style={styles.championSectionSubtitle}>{tournament.name}</Text>
 
                     <View style={styles.championCard}>
+                      <TeamInitialsLogo name={championName} size={64} />
                       <View style={[styles.cupIconWrap, styles.winnerCupWrap]}>
                         <Text style={styles.cupEmoji}>🏆</Text>
                       </View>
@@ -1361,6 +1412,7 @@ export default function TournamentDetailsScreen() {
                     </View>
 
                     <View style={styles.runnerCard}>
+                      <TeamInitialsLogo name={runnerUpName} size={56} />
                       <View style={[styles.cupIconWrap, styles.runnerCupWrap]}>
                         <Text style={styles.cupEmoji}>🥈</Text>
                       </View>
@@ -1456,18 +1508,24 @@ export default function TournamentDetailsScreen() {
                           disabled={tossSubmitting}
                           onPress={() => saveTossTeams(Number(tossModalMatch.homeTeamId), Number(tossModalMatch.awayTeamId))}
                         >
-                          <Text style={styles.tossDecisionText}>
-                            {formatTeamLabel(tossModalMatch.homeTeamName, tossModalMatch.homeTeamId)} Batting
-                          </Text>
+                          <View style={styles.selectionTeamRow}>
+                            <TeamInitialsLogo name={formatTeamLabel(tossModalMatch.homeTeamName, tossModalMatch.homeTeamId)} size={30} />
+                            <Text style={styles.tossDecisionText}>
+                              {formatTeamLabel(tossModalMatch.homeTeamName, tossModalMatch.homeTeamId)} Batting
+                            </Text>
+                          </View>
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={[styles.tossDecisionButton, styles.tossDecisionButtonSecondary, tossSubmitting && styles.disabledButton]}
                           disabled={tossSubmitting}
                           onPress={() => saveTossTeams(Number(tossModalMatch.awayTeamId), Number(tossModalMatch.homeTeamId))}
                         >
-                          <Text style={styles.tossDecisionText}>
-                            {formatTeamLabel(tossModalMatch.awayTeamName, tossModalMatch.awayTeamId)} Batting
-                          </Text>
+                          <View style={styles.selectionTeamRow}>
+                            <TeamInitialsLogo name={formatTeamLabel(tossModalMatch.awayTeamName, tossModalMatch.awayTeamId)} size={30} />
+                            <Text style={styles.tossDecisionText}>
+                              {formatTeamLabel(tossModalMatch.awayTeamName, tossModalMatch.awayTeamId)} Batting
+                            </Text>
+                          </View>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -1499,7 +1557,10 @@ export default function TournamentDetailsScreen() {
                       disabled={winnerSubmitting}
                       onPress={() => submitWinner(Number(winnerPickerMatch.homeTeamId), String(winnerPickerMatch.homeTeamName))}
                     >
-                      <Text style={styles.winnerOptionText}>{winnerPickerMatch.homeTeamName}</Text>
+                      <View style={styles.selectionTeamRow}>
+                        <TeamInitialsLogo name={winnerPickerMatch.homeTeamName} size={32} />
+                        <Text style={styles.winnerOptionText}>{winnerPickerMatch.homeTeamName}</Text>
+                      </View>
                     </TouchableOpacity>
                   )}
 
@@ -1509,7 +1570,10 @@ export default function TournamentDetailsScreen() {
                       disabled={winnerSubmitting}
                       onPress={() => submitWinner(Number(winnerPickerMatch.awayTeamId), String(winnerPickerMatch.awayTeamName))}
                     >
-                      <Text style={styles.winnerOptionText}>{winnerPickerMatch.awayTeamName}</Text>
+                      <View style={styles.selectionTeamRow}>
+                        <TeamInitialsLogo name={winnerPickerMatch.awayTeamName} size={32} />
+                        <Text style={styles.winnerOptionText}>{winnerPickerMatch.awayTeamName}</Text>
+                      </View>
                     </TouchableOpacity>
                   )}
 
@@ -1569,8 +1633,13 @@ export default function TournamentDetailsScreen() {
                           setJoinError('');
                         }}
                       >
-                        <Text style={styles.teamName}>{item.name}</Text>
-                        <Text style={styles.teamLocation}>{item.location}</Text>
+                        <View style={styles.teamIdentityRow}>
+                          <TeamInitialsLogo name={item.name} size={42} />
+                          <View style={styles.teamIdentityCopy}>
+                            <Text style={styles.teamName}>{item.name}</Text>
+                            <Text style={styles.teamLocation}>{item.location}</Text>
+                          </View>
+                        </View>
                       </TouchableOpacity>
                     )}
                     ListEmptyComponent={
@@ -1631,8 +1700,13 @@ export default function TournamentDetailsScreen() {
         keyExtractor={item => item.id.toString()}
         renderItem={({ item }) => (
           <View style={styles.teamItem}>
-            <Text style={styles.teamName}>{item.name}</Text>
-            <Text style={styles.teamLocation}>{item.location}</Text>
+            <View style={styles.teamIdentityRow}>
+              <TeamInitialsLogo name={item.name} size={42} />
+              <View style={styles.teamIdentityCopy}>
+                <Text style={styles.teamName}>{item.name}</Text>
+                <Text style={styles.teamLocation}>{item.location}</Text>
+              </View>
+            </View>
             <View style={{ flexDirection: 'row', marginTop: 8 }}>
               {/* Show Approve/Reject only if not approved */}
               {canManageTournament && !approvedStatus[item.id] && (
@@ -1731,10 +1805,15 @@ export default function TournamentDetailsScreen() {
             </Modal>
 
             {isEditing && (
-              <Modal visible={isEditing} animationType="slide" transparent>
+              <Modal
+                visible={isEditing}
+                animationType="slide"
+                transparent
+                onRequestClose={closeEditTournament}
+              >
                 <View style={styles.modalContainer}>
                   <View style={styles.editModalContent}>
-                    <TouchableOpacity style={styles.closeButton} onPress={() => setIsEditing(false)}>
+                    <TouchableOpacity style={styles.closeButton} onPress={closeEditTournament}>
                       <Text style={styles.closeButtonText}>✕</Text>
                     </TouchableOpacity>
                     <Text style={styles.editModalTitle}>Edit Tournament</Text>
@@ -1885,18 +1964,7 @@ export default function TournamentDetailsScreen() {
                           onChange={(event: any) => {
                             const parsed = parseInputDate(event?.target?.value || '');
                             if (!parsed) return;
-
-                            const currentEnd = editTournament?.end_date ? new Date(editTournament.end_date) : null;
-                            if (currentEnd && parsed.getTime() > currentEnd.getTime()) {
-                              setEditTournament({
-                                ...editTournament,
-                                start_date: formatDateForApi(parsed),
-                                end_date: formatDateForApi(parsed),
-                              });
-                              return;
-                            }
-
-                            setEditTournament({ ...editTournament, start_date: formatDateForApi(parsed) });
+                            updateStartDate(parsed);
                           }}
                           style={{
                             width: '100%',
@@ -1913,18 +1981,24 @@ export default function TournamentDetailsScreen() {
                         />
                       ) : (
                         <>
-                          <TouchableOpacity onPress={() => setEditTournament({ ...editTournament, showStartPicker: true })} style={styles.editDateButton}>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setShowEndDatePicker(false);
+                              setShowStartDatePicker(true);
+                            }}
+                            style={styles.editDateButton}
+                          >
                             <Calendar size={16} color="#555" />
                             <Text style={styles.dateText}>{editTournament?.start_date ? new Date(editTournament.start_date).toDateString() : 'Select Start Date'}</Text>
                           </TouchableOpacity>
-                          {editTournament?.showStartPicker && (
+                          {showStartDatePicker && (
                             <DateTimePicker
                               value={editTournament?.start_date ? new Date(editTournament.start_date) : new Date()}
                               mode="date"
-                              display="default"
-                              onChange={(event, selectedDate) => {
-                                setEditTournament({ ...editTournament, showStartPicker: false });
-                                if (selectedDate) setEditTournament({ ...editTournament, start_date: formatDateForApi(selectedDate) });
+                              display={Platform.OS === 'ios' ? 'compact' : 'default'}
+                              onChange={(_, selectedDate) => {
+                                setShowStartDatePicker(false);
+                                if (selectedDate) updateStartDate(selectedDate);
                               }}
                             />
                           )}
@@ -1939,14 +2013,7 @@ export default function TournamentDetailsScreen() {
                           onChange={(event: any) => {
                             const parsed = parseInputDate(event?.target?.value || '');
                             if (!parsed) return;
-
-                            const currentStart = editTournament?.start_date ? new Date(editTournament.start_date) : null;
-                            if (currentStart && parsed.getTime() < currentStart.getTime()) {
-                              setEditTournament({ ...editTournament, end_date: formatDateForApi(currentStart) });
-                              return;
-                            }
-
-                            setEditTournament({ ...editTournament, end_date: formatDateForApi(parsed) });
+                            updateEndDate(parsed);
                           }}
                           style={{
                             width: '100%',
@@ -1963,18 +2030,24 @@ export default function TournamentDetailsScreen() {
                         />
                       ) : (
                         <>
-                          <TouchableOpacity onPress={() => setEditTournament({ ...editTournament, showEndPicker: true })} style={styles.editDateButton}>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setShowStartDatePicker(false);
+                              setShowEndDatePicker(true);
+                            }}
+                            style={styles.editDateButton}
+                          >
                             <Calendar size={16} color="#555" />
                             <Text style={styles.dateText}>{editTournament?.end_date ? new Date(editTournament.end_date).toDateString() : 'Select End Date'}</Text>
                           </TouchableOpacity>
-                          {editTournament?.showEndPicker && (
+                          {showEndDatePicker && (
                             <DateTimePicker
                               value={editTournament?.end_date ? new Date(editTournament.end_date) : new Date()}
                               mode="date"
-                              display="default"
-                              onChange={(event, selectedDate) => {
-                                setEditTournament({ ...editTournament, showEndPicker: false });
-                                if (selectedDate) setEditTournament({ ...editTournament, end_date: formatDateForApi(selectedDate) });
+                              display={Platform.OS === 'ios' ? 'compact' : 'default'}
+                              onChange={(_, selectedDate) => {
+                                setShowEndDatePicker(false);
+                                if (selectedDate) updateEndDate(selectedDate);
                               }}
                             />
                           )}
@@ -1985,7 +2058,7 @@ export default function TournamentDetailsScreen() {
                     <View style={styles.editActionsRow}>
                       <TouchableOpacity
                         style={styles.editCancelButton}
-                        onPress={() => setIsEditing(false)}
+                        onPress={closeEditTournament}
                       >
                         <Text style={styles.editCancelText}>Cancel</Text>
                       </TouchableOpacity>
@@ -2496,6 +2569,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#111827',
   },
+  matchTeamIdentity: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  matchTeamIdentityAway: {
+    flexDirection: 'row-reverse',
+  },
+  matchTeamTextAway: {
+    textAlign: 'right',
+  },
   matchTossText: {
     marginTop: 4,
     fontSize: 12,
@@ -2595,9 +2680,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#2563EB',
   },
   tossDecisionText: {
+    flex: 1,
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 13,
+  },
+  selectionTeamRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
   },
   tossDebugBox: {
     width: '100%',
@@ -3092,6 +3185,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#2563EB',
   },
   winnerOptionText: {
+    flex: 1,
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
@@ -3126,6 +3220,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderWidth: 1,
     borderColor: '#ddd',
+  },
+  teamIdentityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  teamIdentityCopy: {
+    flex: 1,
   },
   selectedTeam: {
     borderColor: '#1E90FF',

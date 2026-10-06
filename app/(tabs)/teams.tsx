@@ -1,27 +1,31 @@
-import { router } from 'expo-router';
-import { Calendar, Trash2, UserPlus, Users } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import { Calendar, Check, Pencil, Trash2, UserPlus, Users, X } from 'lucide-react-native';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
-  Image,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
+import DropDownPicker from 'react-native-dropdown-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/auth-context';
 import { Header } from '../components/AppHeader';
 import Players from '../components/players';
-import { insertPlayersBulk } from '../service/playerService';
+import TeamInitialsLogo from '../components/TeamInitialsLogo';
+import { insertPlayersBulk, updatePlayer } from '../service/playerService';
 import { assignPlayersToTeam, getPlayersForTeams, getTeamsForPlayer, leaveTeam, removePlayerFromTeam } from '../service/teamPlayerService';
-import { deleteTeam, fetchTeams, fetchTeamsByMobile } from '../service/teamsService';
+import { deleteTeam, fetchTeams, fetchTeamsByMobile, updateTeam } from '../service/teamsService';
 import { fetchTournaments, fetchTournamentsByContact } from '../service/tournamentService';
 import { getTournamentsForTeams } from '../service/tournamentTeamsService';
 import { getApiErrorMessage } from '../../utils/apiError';
+import { getCityItemsForState, INDIAN_STATE_OPTIONS } from '../../constants/indianLocations';
 
 type Team = {
   id: number;
@@ -34,7 +38,19 @@ type Team = {
   wins: number;
   founded: string;
   createdBy: string;
+  state?: string;
+  city?: string;
+  location: string;
 };
+
+const PLAYER_ROLES = [
+  { id: 'batsman', name: 'Batsman' },
+  { id: 'bowler', name: 'Bowler' },
+  { id: 'allrounder', name: 'All-rounder' },
+  { id: 'wicketkeeper', name: 'Wicket Keeper' },
+];
+
+const buildStateItems = () => INDIAN_STATE_OPTIONS.map((state) => ({ label: state, value: state }));
 
 type Tournament = {
   id: number;
@@ -48,15 +64,10 @@ type Tournament = {
   image?: string;
 };
 
-const SPORTS_OPTIONS = [
-  { id: 'cricket', name: 'Cricket', icon: '🏏' },
-  { id: 'football', name: 'Football', icon: '⚽' },
-  { id: 'basketball', name: 'Basketball', icon: '🏀' },
-  { id: 'volleyball', name: 'Volleyball', icon: '🏐' },
-  { id: 'tennis', name: 'Tennis', icon: '🎾' },
-];
-
 export default function TeamsScreen() {
+  const params = useLocalSearchParams<{ teamId?: string | string[] }>();
+  const requestedTeamId = Array.isArray(params.teamId) ? params.teamId[0] : params.teamId;
+  const directOpenHandledRef = useRef('');
   const [mounted, setMounted] = useState(false);
   const [teamPlayersMap, setTeamPlayersMap] = useState<{ [teamId: string]: any[] }>({});
   const [teamTournamentsMap, setTeamTournamentsMap] = useState<{ [teamId: string]: any[] }>({});
@@ -65,6 +76,16 @@ export default function TeamsScreen() {
   const [addingPlayers, setAddingPlayers] = useState(false);
   const [leavingTeam, setLeavingTeam] = useState(false);
   const [removingPlayerId, setRemovingPlayerId] = useState<number | null>(null);
+  const [showTeamEditModal, setShowTeamEditModal] = useState(false);
+  const [teamEditDraft, setTeamEditDraft] = useState({ name: '', state: '', city: '', location: '' });
+  const [teamStateOpen, setTeamStateOpen] = useState(false);
+  const [teamCityOpen, setTeamCityOpen] = useState(false);
+  const [teamStateItems, setTeamStateItems] = useState<{ label: string; value: string }[]>(buildStateItems());
+  const [teamCityItems, setTeamCityItems] = useState<{ label: string; value: string }[]>([]);
+  const [savingTeamDetails, setSavingTeamDetails] = useState(false);
+  const [editingPlayer, setEditingPlayer] = useState<any | null>(null);
+  const [playerEditDraft, setPlayerEditDraft] = useState({ name: '', mobile: '', role: '' });
+  const [savingPlayer, setSavingPlayer] = useState(false);
 
   const user = useAuth()?.user;
   const userId = user?.id;
@@ -93,6 +114,7 @@ export default function TeamsScreen() {
   const myTeams = teams;
 
   const playerLookupKey = String(phone || '').trim();
+  const normalizeContact = (value: unknown) => String(value || '').replace(/\D/g, '').slice(-10);
 
   const uniqueTournamentsFromMap = (tournamentsByTeam: { [teamId: string]: any[] }) => {
     const tournamentMap = new Map<number, any>();
@@ -235,8 +257,143 @@ export default function TeamsScreen() {
     refreshTeamsAndPlayers();
   }, [phone, userId, userRole]);
 
+  useEffect(() => {
+    const normalizedTeamId = String(requestedTeamId || '').trim();
+    if (!normalizedTeamId || loadingTeams || directOpenHandledRef.current === normalizedTeamId) return;
+
+    const requestedTeam = teams.find((team) => String(team.id) === normalizedTeamId);
+    if (requestedTeam) {
+      directOpenHandledRef.current = normalizedTeamId;
+      setSelectedTeam(requestedTeam);
+    }
+  }, [loadingTeams, requestedTeamId, teams]);
+
+  useEffect(() => {
+    const cities = getCityItemsForState(teamEditDraft.state);
+    setTeamCityItems(cities);
+    if (teamEditDraft.city && !cities.some((city) => city.value === teamEditDraft.city)) {
+      setTeamEditDraft((current) => ({ ...current, city: '' }));
+    }
+  }, [teamEditDraft.state]);
+
+  const openTeamDetailsEditor = () => {
+    if (!selectedTeam) return;
+    const state = String(selectedTeam.state || 'Tamil Nadu');
+    const cities = getCityItemsForState(state);
+    const normalizedLocation = String(selectedTeam.location || '').trim().toLowerCase();
+    const cityFromLocation = cities.find((item) =>
+      normalizedLocation === item.value.toLowerCase() ||
+      normalizedLocation.includes(item.value.toLowerCase()),
+    )?.value;
+    const city = String(
+      selectedTeam.city ||
+      cityFromLocation ||
+      (state === 'Tamil Nadu' ? 'Chennai' : ''),
+    );
+    setTeamEditDraft({
+      name: String(selectedTeam.name || ''),
+      state,
+      city,
+      location: String(selectedTeam.location || ''),
+    });
+    setTeamCityItems(cities);
+    setShowTeamEditModal(true);
+  };
+
+  const saveTeamDetails = async () => {
+    if (!selectedTeam || savingTeamDetails) return;
+    const payload = {
+      name: teamEditDraft.name.trim(),
+      state: teamEditDraft.state.trim(),
+      city: teamEditDraft.city.trim(),
+      location: teamEditDraft.location.trim(),
+    };
+    if (!payload.name || !payload.state || !payload.city || !payload.location) {
+      Alert.alert('Complete Team Details', 'Team name, state, city, and location are required.');
+      return;
+    }
+    try {
+      setSavingTeamDetails(true);
+      const response = await updateTeam(String(selectedTeam.id), payload);
+      const updated = { ...selectedTeam, ...response.team, ...payload };
+      setSelectedTeam(updated);
+      setTeams((current) => current.map((team) => team.id === selectedTeam.id ? { ...team, ...updated } : team));
+      setShowTeamEditModal(false);
+      Alert.alert('Team Updated', 'Team details were updated successfully.');
+    } catch (error) {
+      Alert.alert('Unable to Update Team', getApiErrorMessage(error, 'Failed to update team details.'));
+    } finally {
+      setSavingTeamDetails(false);
+    }
+  };
+
+  const openPlayerEditor = (player: any) => {
+    setEditingPlayer(player);
+    setPlayerEditDraft({
+      name: String(player?.name || ''),
+      mobile: String(player?.mobile || '').replace(/\D/g, '').slice(-10),
+      role: String(player?.role || ''),
+    });
+  };
+
+  const savePlayerDetails = async () => {
+    if (!selectedTeam || !editingPlayer || savingPlayer) return;
+    const payload = {
+      name: playerEditDraft.name.trim(),
+      mobile: playerEditDraft.mobile.replace(/\D/g, '').slice(0, 10),
+      role: playerEditDraft.role,
+    };
+    if (!payload.name || !/^\d{10}$/.test(payload.mobile) || !payload.role) {
+      Alert.alert('Complete Player Details', 'Enter a valid name, 10-digit mobile number, and role.');
+      return;
+    }
+    try {
+      setSavingPlayer(true);
+      const response = await updatePlayer(editingPlayer.id, payload);
+      setTeamPlayersMap((current) => ({
+        ...current,
+        [selectedTeam.id]: (current[selectedTeam.id] || []).map((player) =>
+          Number(player.id) === Number(editingPlayer.id)
+            ? { ...player, ...response.player, ...payload }
+            : player
+        ),
+      }));
+      setEditingPlayer(null);
+      Alert.alert('Player Updated', 'Player details were updated successfully.');
+    } catch (error) {
+      Alert.alert('Unable to Update Player', getApiErrorMessage(error, 'Failed to update player details.'));
+    } finally {
+      setSavingPlayer(false);
+    }
+  };
+
   const handleAddPlayersToTeam = async (players: any[]) => {
     if (!playerScreenTeam) return;
+    const currentRoster = teamPlayersMap[playerScreenTeam.id] || [];
+    const normalizeMobile = (value: unknown) => String(value || '').replace(/\D/g, '').slice(-10);
+    const existingMobiles = new Set(currentRoster.map((player: any) => normalizeMobile(player?.mobile)));
+    const requestedMobiles = players.map((player) => normalizeMobile(player?.mobile));
+    const duplicateRequestedMobile = requestedMobiles.find(
+      (mobile, index) => !!mobile && requestedMobiles.indexOf(mobile) !== index,
+    );
+    const alreadyAssignedPlayer = players.find((player) => existingMobiles.has(normalizeMobile(player?.mobile)));
+
+    if (alreadyAssignedPlayer) {
+      Alert.alert('Already on Team', `${alreadyAssignedPlayer.name || 'This player'} is already a member of this team.`);
+      return;
+    }
+    if (duplicateRequestedMobile) {
+      Alert.alert('Duplicate Player', 'The same player is selected more than once.');
+      return;
+    }
+    if (currentRoster.length + players.length > 15) {
+      Alert.alert(
+        'Squad Limit Reached',
+        `This team already has ${currentRoster.length} players. You can add only ${Math.max(15 - currentRoster.length, 0)} more.`,
+      );
+      return;
+    }
+
     setAddingPlayers(true);
     try {
       // Separate existing and new players
@@ -387,30 +544,31 @@ export default function TeamsScreen() {
   };
 
   const handleRemovePlayerFromSelectedTeam = (teamId: number, playerId: number, playerName: string) => {
-    Alert.alert(
-      'Remove Player',
-      `Remove ${formatPlayerName(playerName) || 'this player'} from the team?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setRemovingPlayerId(playerId);
-              await removePlayerFromTeam(String(teamId), String(playerId));
-              Alert.alert('Success', 'Player removed successfully.');
-              await refreshTeamsAndPlayers();
-            } catch (error: any) {
-              const message = error?.response?.data?.message || 'Failed to remove player. Please try again.';
-              Alert.alert('Error', message);
-            } finally {
-              setRemovingPlayerId(null);
-            }
-          },
-        },
-      ]
-    );
+    const playerLabel = formatPlayerName(playerName) || 'this player';
+    const removePlayer = async () => {
+      try {
+        setRemovingPlayerId(playerId);
+        await removePlayerFromTeam(String(teamId), String(playerId));
+        await refreshTeamsAndPlayers();
+        Alert.alert('Success', 'Player removed successfully.');
+      } catch (error) {
+        Alert.alert('Unable to Remove Player', getApiErrorMessage(error, 'Failed to remove player. Please try again.'));
+      } finally {
+        setRemovingPlayerId(null);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Remove ${playerLabel} from the team?`)) {
+        void removePlayer();
+      }
+      return;
+    }
+
+    Alert.alert('Remove Player', `Remove ${playerLabel} from the team?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: removePlayer },
+    ]);
   };
 
   const renderGridTeams = (teamsList: Team[]) => (
@@ -429,11 +587,7 @@ export default function TeamsScreen() {
           style={styles.gridCard}
           onPress={() => setSelectedTeam(team)}
         >
-          <Image
-            source={{ uri: team.image }}
-            style={styles.teamAvatar}
-            resizeMode="cover"
-          />
+          <TeamInitialsLogo name={team.name} size={64} />
           <Text style={styles.gridTeamName}>{team.name}</Text>
           <Text style={styles.gridTeamSport}>{team.sport}</Text>
           <Text style={styles.gridTeamMembers}>{teamPlayersMap[team.id]?.length ?? team.members ?? 0} members</Text>
@@ -464,18 +618,8 @@ export default function TeamsScreen() {
             }}
             onPress={() => setSelectedTeam(team)}
           >
-            <View style={{
-              width: 56,
-              height: 56,
-              borderRadius: 28,
-              marginRight: 16,
-              backgroundColor: '#F3F4F6',
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}>
-              <Text style={{ fontSize: 32 }}>
-                {SPORTS_OPTIONS.find(s => s.id === 'cricket')?.icon ?? '❓'}
-              </Text>
+            <View style={styles.joinedTeamLogoWrap}>
+              <TeamInitialsLogo name={team.name} size={56} />
             </View>
             <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
               <View style={{ flex: 1 }}>
@@ -564,6 +708,7 @@ export default function TeamsScreen() {
     if (!selectedTeam) return null;
     const players = teamPlayersMap[selectedTeam.id?.toString()] || [];
     const selectedTeamTournamentsCount = teamTournamentsMap[selectedTeam.id?.toString()]?.length ?? selectedTeam.tournaments ?? 0;
+    const canEditTeam = isAdmin || normalizeContact(selectedTeam.createdBy) === normalizeContact(phone);
 
     if (showPlayerScreen && playerScreenTeam) {
       return (
@@ -581,12 +726,7 @@ export default function TeamsScreen() {
             <Text style={[styles.headerTitle, { color: '#111827', fontSize: 18 }]}>Add Players</Text>
             <View style={{ width: 40 }} />
           </View>
-          <ScrollView
-            style={{ flex: 1 }}
-            contentContainerStyle={{ flexGrow: 1, backgroundColor: '#F9FAFB' }}
-            showsVerticalScrollIndicator={false}
-          >
-
+          <View style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
               <Players
                 PLAYER_ROLES={[
                   { id: 'batsman', name: 'Batsman', icon: '🏏', color: '#22C55E' },
@@ -599,8 +739,15 @@ export default function TeamsScreen() {
                 styles={styles}
                 onSave={handleAddPlayersToTeam}
                 saving={addingPlayers}
+                organizer={{
+                  name: String(user?.name || 'Organizer'),
+                  mobile: normalizeContact(phone),
+                }}
+                existingPlayerMobiles={(teamPlayersMap[playerScreenTeam.id] || []).map(
+                  (player: any) => String(player?.mobile || ''),
+                )}
               />
-          </ScrollView>
+          </View>
         </SafeAreaView>
       );
     }
@@ -615,14 +762,14 @@ export default function TeamsScreen() {
           </TouchableOpacity>
         </View>
         <View style={styles.teamDetailCard}>
-          <Image
-            source={{ uri: selectedTeam.image }}
-            style={styles.teamDetailImage}
-            resizeMode="cover"
-          />
           <View style={styles.teamDetailOverlay}>
-            <Text style={styles.teamDetailName}>{selectedTeam.name}</Text>
-            <Text style={styles.teamDetailSport}>{selectedTeam.sport}</Text>
+            <View style={styles.teamDetailIdentityRow}>
+              <TeamInitialsLogo name={selectedTeam.name} size={64} />
+              <View style={styles.teamDetailIdentityCopy}>
+                <Text style={styles.teamDetailName}>{selectedTeam.name}</Text>
+                <Text style={styles.teamDetailSport}>{selectedTeam.sport || 'Cricket'}</Text>
+              </View>
+            </View>
             <View style={styles.teamDetailStats}>
               <View style={styles.detailStat}>
                 <Text style={styles.detailStatNumber}>{players.length}</Text>
@@ -639,6 +786,27 @@ export default function TeamsScreen() {
             </View>
           </View>
         </View>
+        {canEditTeam && (
+          <View style={styles.editTeamNameSection}>
+            <View style={styles.editTeamNameHeader}>
+              <View>
+                <Text style={styles.editTeamNameLabel}>Team details</Text>
+                <Text style={styles.editTeamDetailsSummary}>
+                  {[selectedTeam.location, selectedTeam.city, selectedTeam.state].filter(Boolean).join(', ')}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.editTeamNameButton}
+                onPress={openTeamDetailsEditor}
+                accessibilityRole="button"
+                accessibilityLabel="Edit team details"
+              >
+                <Pencil size={15} color="#166534" />
+                <Text style={styles.editTeamNameButtonText}>Edit Details</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
         <View style={styles.playersSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Players</Text>
@@ -670,17 +838,23 @@ export default function TeamsScreen() {
                   <Text style={styles.playerPosition}>{player.role}</Text>
                   <Text style={styles.playerStat}>{player.mobile}</Text>
                 </View>
-                {isPrivileged && (
-                  <TouchableOpacity
-                    style={styles.removePlayerButton}
-                    onPress={() => handleRemovePlayerFromSelectedTeam(selectedTeam.id, player.id, player.name)}
-                    disabled={removingPlayerId === player.id}
-                  >
-                    <Trash2 size={16} color="#DC2626" />
-                    <Text style={styles.removePlayerText}>
-                      {removingPlayerId === player.id ? 'Removing...' : 'Remove'}
-                    </Text>
-                  </TouchableOpacity>
+                {canEditTeam && (
+                  <View style={styles.playerManageActions}>
+                    <TouchableOpacity
+                      style={styles.editPlayerButton}
+                      onPress={() => openPlayerEditor(player)}
+                      accessibilityLabel={`Edit ${player.name}`}
+                    >
+                      <Pencil size={16} color="#1D4ED8" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.removePlayerButton}
+                      onPress={() => handleRemovePlayerFromSelectedTeam(selectedTeam.id, player.id, player.name)}
+                      disabled={removingPlayerId === player.id}
+                    >
+                      <Trash2 size={16} color="#DC2626" />
+                    </TouchableOpacity>
+                  </View>
                 )}
               </View>
             ))
@@ -755,6 +929,144 @@ export default function TeamsScreen() {
           renderItem={null}
         />
       )}
+
+      <Modal
+        visible={showTeamEditModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowTeamEditModal(false)}
+      >
+        <View style={styles.editModalBackdrop}>
+          <View style={styles.editModalContent}>
+            <View style={styles.editModalHeader}>
+              <Text style={styles.editModalTitle}>Edit Team Details</Text>
+              <TouchableOpacity style={styles.editModalClose} onPress={() => setShowTeamEditModal(false)}>
+                <X size={20} color="#475569" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.editModalForm}>
+              <Text style={styles.editFieldLabel}>Team Name</Text>
+              <TextInput
+                style={styles.editFieldInput}
+                value={teamEditDraft.name}
+                onChangeText={(name) => setTeamEditDraft((current) => ({ ...current, name }))}
+                placeholder="Team name"
+              />
+              <Text style={styles.editFieldLabel}>State / Union Territory</Text>
+              <DropDownPicker
+                open={teamStateOpen}
+                value={teamEditDraft.state}
+                items={teamStateItems}
+                setOpen={setTeamStateOpen}
+                setValue={(callback) => setTeamEditDraft((current) => ({
+                  ...current,
+                  state: typeof callback === 'function' ? callback(current.state) : callback,
+                }))}
+                setItems={setTeamStateItems}
+                searchable
+                listMode="MODAL"
+                searchPlaceholder="Search states"
+                style={styles.editDropdownField}
+              />
+              <Text style={styles.editFieldLabel}>City</Text>
+              <DropDownPicker
+                open={teamCityOpen}
+                value={teamEditDraft.city}
+                items={teamCityItems}
+                setOpen={setTeamCityOpen}
+                setValue={(callback) => setTeamEditDraft((current) => ({
+                  ...current,
+                  city: typeof callback === 'function' ? callback(current.city) : callback,
+                }))}
+                setItems={setTeamCityItems}
+                searchable
+                listMode="MODAL"
+                searchPlaceholder="Search cities"
+                style={styles.editDropdownField}
+              />
+              <Text style={styles.editFieldLabel}>Location / Area</Text>
+              <TextInput
+                style={styles.editFieldInput}
+                value={teamEditDraft.location}
+                onChangeText={(location) => setTeamEditDraft((current) => ({ ...current, location }))}
+                placeholder="Location or area"
+              />
+              <TouchableOpacity
+                style={[styles.editSaveButton, savingTeamDetails && styles.editSaveButtonDisabled]}
+                onPress={saveTeamDetails}
+                disabled={savingTeamDetails}
+              >
+                <Text style={styles.editSaveButtonText}>{savingTeamDetails ? 'Saving...' : 'Save Team Details'}</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={!!editingPlayer}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditingPlayer(null)}
+      >
+        <View style={styles.editModalBackdrop}>
+          <View style={styles.editModalContent}>
+            <View style={styles.editModalHeader}>
+              <Text style={styles.editModalTitle}>Edit Player</Text>
+              <TouchableOpacity style={styles.editModalClose} onPress={() => setEditingPlayer(null)}>
+                <X size={20} color="#475569" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.editFieldLabel}>Player Name</Text>
+            <TextInput
+              style={styles.editFieldInput}
+              value={playerEditDraft.name}
+              onChangeText={(name) => setPlayerEditDraft((current) => ({ ...current, name }))}
+              placeholder="Player name"
+              autoCapitalize="words"
+            />
+            <Text style={styles.editFieldLabel}>Mobile Number</Text>
+            <TextInput
+              style={styles.editFieldInput}
+              value={playerEditDraft.mobile}
+              onChangeText={(mobile) => setPlayerEditDraft((current) => ({
+                ...current,
+                mobile: mobile.replace(/\D/g, '').slice(0, 10),
+              }))}
+              placeholder="10-digit mobile number"
+              keyboardType="phone-pad"
+              maxLength={10}
+            />
+            <Text style={styles.editFieldLabel}>Playing Role</Text>
+            <View style={styles.playerRoleOptions}>
+              {PLAYER_ROLES.map((role) => (
+                <TouchableOpacity
+                  key={role.id}
+                  style={[
+                    styles.playerRoleOption,
+                    playerEditDraft.role === role.id && styles.playerRoleOptionActive,
+                  ]}
+                  onPress={() => setPlayerEditDraft((current) => ({ ...current, role: role.id }))}
+                >
+                  <Text style={[
+                    styles.playerRoleOptionText,
+                    playerEditDraft.role === role.id && styles.playerRoleOptionTextActive,
+                  ]}>
+                    {role.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity
+              style={[styles.editSaveButton, savingPlayer && styles.editSaveButtonDisabled]}
+              onPress={savePlayerDetails}
+              disabled={savingPlayer}
+            >
+              <Text style={styles.editSaveButtonText}>{savingPlayer ? 'Saving...' : 'Save Player'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -870,19 +1182,13 @@ const styles = StyleSheet.create({
     minWidth: 150,
     maxWidth: '48%',
   },
-  teamAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    marginBottom: 10,
-    backgroundColor: '#F3F4F6',
-  },
   gridTeamName: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#111827',
     marginBottom: 2,
     textAlign: 'center',
+    marginTop: 10,
   },
   gridTeamSport: {
     fontSize: 14,
@@ -1041,10 +1347,10 @@ const styles = StyleSheet.create({
     height: 200,
     position: 'relative',
     marginBottom: 24,
+    backgroundColor: '#0F172A',
   },
-  teamDetailImage: {
-    width: '100%',
-    height: '100%',
+  joinedTeamLogoWrap: {
+    marginRight: 16,
   },
   teamDetailOverlay: {
     position: 'absolute',
@@ -1052,9 +1358,18 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: '#0F172A',
     justifyContent: 'flex-end',
     padding: 20,
+  },
+  teamDetailIdentityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginBottom: 16,
+  },
+  teamDetailIdentityCopy: {
+    flex: 1,
   },
   teamDetailName: {
     fontSize: 24,
@@ -1067,11 +1382,84 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Inter-Medium',
     color: '#FFFFFF',
-    marginBottom: 16,
+    marginBottom: 0,
   },
   teamDetailStats: {
     flexDirection: 'row',
     justifyContent: 'space-around',
+  },
+  editTeamNameSection: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+    padding: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D1FAE5',
+    backgroundColor: '#F0FDF4',
+  },
+  editTeamNameHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  editTeamNameLabel: {
+    color: '#166534',
+    fontSize: 13,
+    fontFamily: 'Inter-SemiBold',
+  },
+  editTeamDetailsSummary: {
+    marginTop: 4,
+    color: '#64748B',
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+  },
+  editTeamNameButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  editTeamNameButtonText: {
+    color: '#166534',
+    fontSize: 13,
+    fontFamily: 'Inter-SemiBold',
+  },
+  editTeamNameControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  editTeamNameInput: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    color: '#111827',
+    fontSize: 15,
+    fontFamily: 'Inter-Regular',
+  },
+  teamNameSaveButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#16A34A',
+  },
+  teamNameCancelButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#FFFFFF',
   },
   detailStat: {
     alignItems: 'center',
@@ -1147,13 +1535,29 @@ const styles = StyleSheet.create({
   removePlayerButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    width: 42,
+    height: 42,
     borderRadius: 8,
     backgroundColor: '#FEF2F2',
     borderWidth: 1,
     borderColor: '#FECACA',
-    minWidth: 76,
+  },
+  playerManageActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginLeft: 8,
+  },
+  editPlayerButton: {
+    width: 42,
+    height: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
   },
   removePlayerText: {
     marginTop: 4,
@@ -1234,6 +1638,116 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   leaveTeamButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontFamily: 'Inter-SemiBold',
+  },
+  editModalBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+  },
+  editModalContent: {
+    width: '100%',
+    maxWidth: 560,
+    maxHeight: '90%',
+    alignSelf: 'center',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 28,
+  },
+  editModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+  editModalTitle: {
+    color: '#0F172A',
+    fontSize: 20,
+    fontFamily: 'Poppins-SemiBold',
+  },
+  editModalClose: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F5F9',
+  },
+  editModalForm: {
+    paddingBottom: 20,
+  },
+  editFieldLabel: {
+    color: '#334155',
+    fontSize: 13,
+    fontFamily: 'Inter-SemiBold',
+    marginBottom: 7,
+    marginTop: 10,
+  },
+  editFieldInput: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 13,
+    color: '#0F172A',
+    fontSize: 15,
+    fontFamily: 'Inter-Regular',
+  },
+  editDropdownField: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  playerRoleOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  playerRoleOption: {
+    minHeight: 42,
+    flexGrow: 1,
+    flexBasis: '45%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 9,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 10,
+  },
+  playerRoleOptionActive: {
+    borderColor: '#16A34A',
+    backgroundColor: '#DCFCE7',
+  },
+  playerRoleOptionText: {
+    color: '#475569',
+    fontSize: 13,
+    fontFamily: 'Inter-SemiBold',
+  },
+  playerRoleOptionTextActive: {
+    color: '#166534',
+  },
+  editSaveButton: {
+    minHeight: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    backgroundColor: '#16A34A',
+    marginTop: 20,
+  },
+  editSaveButtonDisabled: {
+    backgroundColor: '#94A3B8',
+  },
+  editSaveButtonText: {
     color: '#FFFFFF',
     fontSize: 15,
     fontFamily: 'Inter-SemiBold',

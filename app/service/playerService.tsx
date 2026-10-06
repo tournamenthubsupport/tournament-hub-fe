@@ -24,6 +24,18 @@ export const insertPlayersBulk = async (players: any[]) => {
   }
 };
 
+export const updatePlayer = async (
+  id: string | number,
+  playerData: { name: string; mobile: string; role: string },
+) => {
+  try {
+    const response = await axios.put(`${BASE_URL}/players/${id}`, playerData);
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to update the player.'));
+  }
+};
+
 
   export const searchPlayers = async (searchTerm: string) => {
     try {
@@ -34,4 +46,4 @@ export const insertPlayersBulk = async (players: any[]) => {
       throw new Error(getApiErrorMessage(error, 'Player search is unavailable. Please try again.'));
     }
   };
-export default { insertPlayer, insertPlayersBulk, searchPlayers };
+export default { insertPlayer, insertPlayersBulk, searchPlayers, updatePlayer };
